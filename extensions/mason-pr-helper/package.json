@@ -1,0 +1,95 @@
+{
+  "name": "mason-pr-helper",
+  "displayName": "Mason PR Helper",
+  "description": "Generate PR summaries and reviews using DeepSeek AI",
+  "version": "0.1.0",
+  "publisher": "masondevtools",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:masonDevTools.sidebar"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "masonDevTools",
+          "title": "Mason PR Helper",
+          "icon": "media/mason-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "masonDevTools": [
+        {
+          "type": "webview",
+          "id": "masonDevTools.sidebar",
+          "name": "PR Tools"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "MasonDevTools",
+      "properties": {
+        "masonDevTools.scriptPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to New-PrRequest.ps1. Leave empty to use the default location relative to the extension (works in dev mode). Set this when running a packaged .vsix install."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "masonDevTools.initializeProjectConfig",
+        "title": "MasonDevTools: Initialize Project Config"
+      },
+      {
+        "command": "masonDevTools.openProjectConfig",
+        "title": "MasonDevTools: Open Project Config"
+      },
+      {
+        "command": "masonDevTools.generatePrBody",
+        "title": "MasonDevTools: Generate PR Body"
+      },
+      {
+        "command": "masonDevTools.generatePrReview",
+        "title": "MasonDevTools: Generate Full PR Review"
+      },
+      {
+        "command": "masonDevTools.submitPr",
+        "title": "MasonDevTools: Submit PR to GitHub"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "masonDevTools.initializeProjectConfig",
+          "when": "view == masonDevTools.sidebar",
+          "group": "navigation"
+        },
+        {
+          "command": "masonDevTools.openProjectConfig",
+          "when": "view == masonDevTools.sidebar",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

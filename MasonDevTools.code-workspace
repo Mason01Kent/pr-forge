@@ -1,0 +1,33 @@
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "MasonDevTools (root)"
+    },
+    {
+      "path": "extensions/mason-pr-helper",
+      "name": "mason-pr-helper (extension)"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/out": true,
+      "**/dist": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/out": true,
+      "**/dist": true,
+      "**/.pr": true,
+      "**/.agent-output": true
+    },
+    "powershell.cwd": "MasonDevTools (root)"
+  },
+  "extensions": {
+    "recommendations": [
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode"
+    ]
+  }
+}

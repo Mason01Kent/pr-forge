@@ -1,0 +1,184 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  padding: 8px 10px;
+  line-height: 1.4;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.3));
+}
+
+.header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  letter-spacing: 0.02em;
+}
+
+.header-icon {
+  font-size: 15px;
+  opacity: 0.8;
+}
+
+/* Status Card */
+.card {
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.1));
+  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.2));
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 20px;
+}
+
+.card-row + .card-row {
+  margin-top: 4px;
+}
+
+.label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  min-width: 50px;
+}
+
+.value {
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.badge.ok {
+  background: var(--vscode-testing-iconPassed, #4caf50);
+  color: #fff;
+}
+
+.badge.warn {
+  background: var(--vscode-statusBarItem-warningBackground, #b8860b);
+  color: var(--vscode-statusBarItem-warningForeground, #fff);
+}
+
+/* Action Buttons */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 2px;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+  transition: opacity 0.1s;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.btn-secondary {
+  background: var(--vscode-button-secondaryBackground, rgba(127,127,127,0.2));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.3));
+}
+
+.btn-submit {
+  background: transparent;
+  color: var(--vscode-gitDecoration-addedResourceForeground, #4caf50);
+  border: 1px solid var(--vscode-gitDecoration-addedResourceForeground, #4caf50);
+}
+
+.btn-submit:hover:not(:disabled) {
+  background: var(--vscode-gitDecoration-addedResourceForeground, #4caf50);
+  color: var(--vscode-button-foreground, #fff);
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.3));
+  margin: 2px 0;
+}
+
+/* Status / Progress Area */
+.status-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.1));
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.spinner {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--vscode-progressBar-background, var(--vscode-button-background));
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
