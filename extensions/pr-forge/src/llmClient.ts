@@ -88,7 +88,7 @@ async function chatCompleteOpenAICompatible(
   }
 
   if (options.provider === 'openrouter') {
-    headers['HTTP-Referer'] = 'mason-pr-helper';
+    headers['HTTP-Referer'] = 'pr-forge';
   }
 
   const body = JSON.stringify({

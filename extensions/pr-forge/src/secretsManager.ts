@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { PROVIDERS } from './llmClient';
 
 function keyFor(provider: string): string {
-  return `masonDevTools.apiKey.${provider}`;
+  return `prForge.apiKey.${provider}`;
 }
 
 export async function getApiKey(context: vscode.ExtensionContext, provider: string): Promise<string | undefined> {

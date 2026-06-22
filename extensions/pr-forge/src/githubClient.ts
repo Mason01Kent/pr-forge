@@ -8,6 +8,7 @@ export interface PrPayload {
     head: string;
     base: string;
     token: string;
+    draft?: boolean;
 }
 
 export interface PrResult {
@@ -40,9 +41,9 @@ export function parseGitHubRemote(remoteUrl: string): { owner: string; repo: str
  * Create a GitHub Pull Request via the REST API using Node's built-in https module.
  */
 export function createPullRequest(payload: PrPayload): Promise<PrResult> {
-    const { owner, repo, title, body, head, base, token } = payload;
+    const { owner, repo, title, body, head, base, token, draft } = payload;
 
-    const requestBody = JSON.stringify({ title, body, head, base });
+    const requestBody = JSON.stringify({ title, body, head, base, draft: draft ?? false });
     const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`;
 
     const options: https.RequestOptions = {
@@ -53,7 +54,7 @@ export function createPullRequest(payload: PrPayload): Promise<PrResult> {
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/vnd.github+json',
             'Content-Type': 'application/json',
-            'User-Agent': 'mason-pr-helper-vscode',
+            'User-Agent': 'pr-forge-vscode',
             'X-GitHub-Api-Version': '2022-11-28',
             'Content-Length': Buffer.byteLength(requestBody).toString(),
         },
@@ -65,18 +66,24 @@ export function createPullRequest(payload: PrPayload): Promise<PrResult> {
             res.on('data', (chunk: Buffer) => chunks.push(chunk));
             res.on('end', () => {
                 const raw = Buffer.concat(chunks).toString('utf-8');
-                let json: { html_url?: string; number?: number; message?: string };
+                let json: { html_url?: string; number?: number; message?: string; errors?: Array<{ message?: string; code?: string; field?: string }> };
                 try {
                     json = JSON.parse(raw);
                 } catch {
-                    reject(new Error(`GitHub API returned invalid JSON (status ${res.statusCode})`));
+                    reject(new Error(`GitHub API returned invalid JSON (status ${res.statusCode}): ${raw.slice(0, 200)}`));
                     return;
                 }
 
                 if (res.statusCode === 201 && json.html_url && json.number) {
                     resolve({ url: json.html_url, number: json.number });
                 } else {
-                    reject(new Error(json.message || `GitHub API error ${res.statusCode}`));
+                    // Build a detailed error including any validation sub-errors
+                    let msg = json.message || `GitHub API error ${res.statusCode}`;
+                    if (json.errors && json.errors.length > 0) {
+                        const details = json.errors.map(e => e.message || e.code || e.field || JSON.stringify(e)).join('; ');
+                        msg += ` — ${details}`;
+                    }
+                    reject(new Error(msg));
                 }
             });
         });

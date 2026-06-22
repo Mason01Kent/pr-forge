@@ -22,6 +22,7 @@ export interface PrGeneratorResult {
   body: string;
   review?: string;
   outputDir: string;
+  branch: string;
 }
 
 function safeExec(cmd: string, cwd: string): string {
@@ -197,5 +198,5 @@ ${testOutput}`,
   }
   opts.onLog(`Output written to ${outputDir}`);
 
-  return { title: cleanTitle, body, review, outputDir };
+  return { title: cleanTitle, body, review, outputDir, branch };
 }

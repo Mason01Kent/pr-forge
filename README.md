@@ -1,90 +1,56 @@
-# MasonDevTools
+# PR Forge
 
-A collection of reusable VS Code developer tools for my projects.
+AI-powered pull request **description** and **review** generator for VS Code.
 
-Currently contains:
-- **mason-pr-helper**: VS Code extension + PowerShell script for generating PR summaries and reviews using DeepSeek.
+PR Forge turns your branch diff into a polished PR title, description, and full code
+review — then submits the PR to GitHub, all from a sidebar panel or the status bar.
 
-## Quick Start
+Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and **Ollama** (local).
 
-### Open the workspace
+## Features
 
-```powershell
-code C:\Users\codtv\Desktop\Apps\MasonDevTools\MasonDevTools.code-workspace
+- **Generate PR Body** — title + description from the `base..HEAD` diff, commits, and test output.
+- **Generate Full PR Review** — structured review: blocking issues, suggestions, security, test coverage, recommendation.
+- **GitHub-style preview** — rendered preview with copy / open-in-editor actions.
+- **Submit PR / Submit Draft PR** — creates the PR on GitHub via the REST API.
+- **Multi-provider** — switch providers any time; API keys are stored in VS Code SecretStorage, never in project files.
+- **Project type detection** — auto-detects .NET, Node, React, and Python to seed sensible defaults.
+
+## Repo layout
+
+```
+extensions/pr-forge/      VS Code extension (TypeScript)
+templates/                Example PR review rule sets
+docs/setup.md             Setup & troubleshooting guide
 ```
 
-### Install extension dependencies
+## Quick start
 
 ```powershell
-cd C:\Users\codtv\Desktop\Apps\MasonDevTools\extensions\mason-pr-helper
+cd extensions/pr-forge
 npm install
 npm run compile
 ```
 
-### Run/Debug the extension locally
+Then open the folder in VS Code and press `F5` to launch the Extension Development Host.
+See [docs/setup.md](docs/setup.md) for the full walkthrough.
 
-1. Open `MasonDevTools.code-workspace` in VS Code.
-2. Press `F5` (or `Run > Start Debugging`) to launch the Extension Development Host.
-3. In the new VS Code window, open any project folder.
-4. Use the status bar buttons or Command Palette (`Ctrl+Shift+P`) to run MasonDevTools commands.
+## Project config
 
-### Configure DeepSeek API key
+Each target project gets a `.pr-forge.json` in its root (run **PR Forge: Initialize
+Project Config**). It controls the base branch, provider/model, output directory,
+review-rule files, risk areas, and PR body sections.
 
-Set the environment variable before launching VS Code or in your system environment:
+## Generated files
 
-```powershell
-$env:DEEPSEEK_API_KEY = "your-api-key-here"
-```
-
-The extension reads this at runtime. The key is never stored in any project files.
-
-### Project Config
-
-Each target project uses a `.mason-devtools.json` file in its workspace root. Run `MasonDevTools: Initialize Project Config` from the Command Palette to generate one automatically.
-
-Example config:
-
-```json
-{
-  "schemaVersion": 1,
-  "projectName": "MyProject",
-  "baseBranch": "main",
-  "projectType": "dotnet",
-  "testCommand": "dotnet test --configuration Release",
-  "outputDirectory": ".pr",
-  "defaultModel": "deepseek-v4-pro",
-  "reviewRulesFiles": ["README.md", "AGENTS.md"],
-  "prRiskAreas": ["security", "tests", "configuration"],
-  "prBodySections": [
-    "Summary",
-    "Why this matters",
-    "Changes",
-    "Tests / verification",
-    "Review focus",
-    "Risks / follow-ups"
-  ]
-}
-```
-
-### Generated files
-
-All PR output goes into the configured `outputDirectory` (default `.pr/`):
+All output goes into the configured `outputDirectory` (default `.pr/`):
 
 | File | Description |
 |---|---|
 | `.pr/PR_TITLE.txt` | Suggested PR title |
 | `.pr/PR_BODY.md` | Full PR description |
-| `.pr/PR_REVIEW.md` | Full PR review (only with `Generate Full PR Review`) |
+| `.pr/PR_REVIEW.md` | Full PR review (only with **Generate Full PR Review**) |
 
-### Current limitations (v1)
+## License
 
-- No GitHub PR creation or commenting yet
-- No webview UI (uses commands + output channel)
-- PowerShell script requires PowerShell 5.1+
-- DeepSeek API must be accessible from your machine
-
-### Next phase
-
-- GitHub integration (create PRs, post reviews)
-- More project type detection
-- Configurable prompt templates
+MIT — see [LICENSE](LICENSE).

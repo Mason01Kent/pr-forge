@@ -23,9 +23,11 @@ type WebviewToExtMsg =
     | { command: 'generatePrBody' }
     | { command: 'generatePrReview' }
     | { command: 'submitPr' }
+    | { command: 'submitDraftPr' }
     | { command: 'setApiKey' }
     | { command: 'ready' }
     | { command: 'showTools' }
+    | { command: 'showPreview' }
     | { command: 'copyPreviewTitle' }
     | { command: 'copyPreviewBody' };
 
@@ -35,19 +37,22 @@ type ExtToWebviewMsg =
     | { type: 'runEnd'; runType: 'prBody' | 'prReview'; success: boolean; timestamp: string };
 
 export interface SidebarCallbacks {
+    onReady: () => Promise<void>;
     onInitConfig: () => Promise<void>;
     onOpenConfig: () => Promise<void>;
     onGeneratePrBody: () => Promise<void>;
     onGeneratePrReview: () => Promise<void>;
     onSubmitPr: () => Promise<void>;
+    onSubmitDraftPr: () => Promise<void>;
     onSetApiKey: () => Promise<void>;
     onShowTools: () => void;
+    onShowPreview: () => void;
     onCopyPreviewTitle: (title: string) => void;
     onCopyPreviewBody: () => void;
 }
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = 'masonDevTools.sidebar';
+    public static readonly viewType = 'prForge.sidebar';
 
     private _view?: vscode.WebviewView;
     private _state: SidebarState = {
@@ -89,6 +94,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             switch (msg.command) {
                 case 'ready':
                     this._post({ type: 'stateUpdate', state: this._state });
+                    this._callbacks.onReady();
                     break;
                 case 'initConfig':
                     this._callbacks.onInitConfig();
@@ -105,11 +111,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'submitPr':
                     this._callbacks.onSubmitPr();
                     break;
+                case 'submitDraftPr':
+                    this._callbacks.onSubmitDraftPr();
+                    break;
                 case 'setApiKey':
                     this._callbacks.onSetApiKey();
                     break;
                 case 'showTools':
                     this._callbacks.onShowTools();
+                    break;
+                case 'showPreview':
+                    this._callbacks.onShowPreview();
                     break;
                 case 'copyPreviewTitle':
                     if (this._state.previewTitle) {
@@ -162,7 +174,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                  script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${cssUri}">
-  <title>Mason PR Helper</title>
+  <title>PR Forge</title>
 </head>
 <body>
 
@@ -170,7 +182,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 <div id="tools-view">
   <div class="header">
     <span class="header-icon">⬡</span>
-    <h2 class="header-title">Mason PR Helper</h2>
+    <h2 class="header-title">PR Forge</h2>
   </div>
 
   <div class="card" id="status-card">
@@ -207,7 +219,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <button class="btn btn-primary" id="btn-pr-review">
       <span id="btn-pr-review-label">✦ Generate PR Review</span>
     </button>
-    <button class="btn btn-submit" id="btn-submit-pr" style="display:none">↑ Submit PR to GitHub</button>
+    <hr class="divider">
+    <button class="btn btn-secondary" id="btn-view-summary" disabled>📄 View PR Preview</button>
+    <button class="btn btn-submit" id="btn-submit-pr" disabled>↑ Submit PR to GitHub</button>
+    <button class="btn btn-submit-draft" id="btn-submit-draft-pr" disabled>📝 Submit as Draft PR</button>
   </div>
 
   <div class="status-area" id="status-area" style="display:none">
@@ -225,7 +240,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <div class="preview-actions" id="preview-actions">
     <button class="btn btn-preview-action" id="btn-preview-copy-title" style="display:none">📋 Copy Title</button>
     <button class="btn btn-preview-action" id="btn-preview-copy-body">📋 Copy Body</button>
+    <button class="btn btn-preview-action btn-preview-draft" id="btn-preview-draft" style="display:none">📝 Submit Draft</button>
     <button class="btn btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none">↑ Submit PR</button>
+  </div>
+  <!-- GitHub-style title shown for PR Body previews -->
+  <div class="gh-pr-title-bar" id="gh-pr-title-bar" style="display:none">
+    <div class="gh-pr-title-bar-label">PR Title</div>
+    <div class="gh-pr-title-bar-text" id="gh-pr-title-text"></div>
   </div>
   <div class="preview-content" id="preview-content"></div>
 </div>
@@ -238,19 +259,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   const previewView = el('preview-view');
 
   // Tools view buttons
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr'].map(el);
-  el('btn-set-key').addEventListener('click',    () => vscode.postMessage({ command: 'setApiKey' }));
-  el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
-  el('btn-open-config').addEventListener('click', () => vscode.postMessage({ command: 'openConfig' }));
-  el('btn-pr-body').addEventListener('click',     () => vscode.postMessage({ command: 'generatePrBody' }));
-  el('btn-pr-review').addEventListener('click',   () => vscode.postMessage({ command: 'generatePrReview' }));
-  el('btn-submit-pr').addEventListener('click',   () => vscode.postMessage({ command: 'submitPr' }));
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-submit-pr','btn-submit-draft-pr'].map(el);
+  el('btn-set-key').addEventListener('click',          () => vscode.postMessage({ command: 'setApiKey' }));
+  el('btn-init-config').addEventListener('click',       () => vscode.postMessage({ command: 'initConfig' }));
+  el('btn-open-config').addEventListener('click',       () => vscode.postMessage({ command: 'openConfig' }));
+  el('btn-pr-body').addEventListener('click',           () => vscode.postMessage({ command: 'generatePrBody' }));
+  el('btn-pr-review').addEventListener('click',         () => vscode.postMessage({ command: 'generatePrReview' }));
+  el('btn-submit-pr').addEventListener('click',         () => vscode.postMessage({ command: 'submitPr' }));
+  el('btn-submit-draft-pr').addEventListener('click',   () => vscode.postMessage({ command: 'submitDraftPr' }));
+  el('btn-view-summary').addEventListener('click',      () => vscode.postMessage({ command: 'showPreview' }));
 
   // Preview view buttons
   el('btn-back').addEventListener('click', () => vscode.postMessage({ command: 'showTools' }));
   el('btn-preview-copy-title').addEventListener('click', () => vscode.postMessage({ command: 'copyPreviewTitle' }));
   el('btn-preview-copy-body').addEventListener('click',  () => vscode.postMessage({ command: 'copyPreviewBody' }));
   el('btn-preview-submit').addEventListener('click',     () => vscode.postMessage({ command: 'submitPr' }));
+  el('btn-preview-draft').addEventListener('click',      () => vscode.postMessage({ command: 'submitDraftPr' }));
 
   function switchView(mode) {
     if (mode === 'preview') {
@@ -290,7 +314,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('last-run-row').style.display = '';
     }
 
-    el('btn-submit-pr').style.display = state.prBodyReady ? '' : 'none';
+    el('btn-submit-pr').disabled      = !state.prBodyReady;
+    el('btn-submit-draft-pr').disabled = !state.prBodyReady;
+    el('btn-view-summary').disabled    = !state.prBodyReady;
+    el('btn-submit-pr').title      = state.prBodyReady ? '' : 'Generate a PR Body first';
+    el('btn-submit-draft-pr').title = state.prBodyReady ? '' : 'Generate a PR Body first';
+    el('btn-view-summary').title    = state.prBodyReady ? '' : 'Generate a PR Body first';
 
     if (state.isRunning) {
       setRunning(true, state.lastRunType === 'prBody' ? 'Generating PR Body...' : 'Generating PR Review...');
@@ -303,6 +332,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('preview-header-title').textContent = isPrBody ? 'PR Body' : 'PR Review';
     el('btn-preview-copy-title').style.display = isPrBody ? '' : 'none';
     el('btn-preview-submit').style.display = (isPrBody && state.prBodyReady) ? '' : 'none';
+    el('btn-preview-draft').style.display = (isPrBody && state.prBodyReady) ? '' : 'none';
+
+    // GitHub-style title bar
+    const titleBar = el('gh-pr-title-bar');
+    const titleText = el('gh-pr-title-text');
+    if (isPrBody && state.previewTitle) {
+      titleBar.style.display = 'block';
+      titleText.textContent = state.previewTitle;
+    } else {
+      titleBar.style.display = 'none';
+      titleText.textContent = '';
+    }
 
     if (state.previewBody) {
       el('preview-content').innerHTML = state.previewBody;
@@ -338,7 +379,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         el('last-run-info').textContent = icon + ' ' + label + ' · ' + msg.timestamp;
         el('last-run-row').style.display = '';
         if (msg.runType === 'prBody' && msg.success) {
-          el('btn-submit-pr').style.display = '';
+          el('btn-submit-pr').disabled = false;
+          el('btn-submit-draft-pr').disabled = false;
+          el('btn-view-summary').disabled = false;
+          el('btn-submit-pr').title = '';
+          el('btn-submit-draft-pr').title = '';
+          el('btn-view-summary').title = '';
         }
         break;
     }

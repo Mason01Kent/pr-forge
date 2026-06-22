@@ -4,11 +4,11 @@ import * as crypto from 'crypto';
 import { renderMarkdown } from './markdownRenderer';
 
 export type PreviewContent =
-    | { kind: 'prBody';  title: string; body: string; timestamp: string }
+    | { kind: 'prBody';  title: string; body: string; timestamp: string; headBranch?: string; baseBranch?: string }
     | { kind: 'prReview'; body: string; timestamp: string };
 
 export class PreviewPanel {
-    static readonly viewType = 'masonDevTools.preview';
+    static readonly viewType = 'prForge.preview';
     private static _instance?: PreviewPanel;
 
     private readonly _panel: vscode.WebviewPanel;
@@ -57,7 +57,7 @@ export class PreviewPanel {
 
         const title = content.kind === 'prBody' ? 'PR Body' : 'PR Review';
         const panel = vscode.window.createWebviewPanel(
-            'masonDevTools.preview',
+            'prForge.preview',
             title,
             vscode.ViewColumn.Beside,
             {
@@ -104,7 +104,10 @@ export class PreviewPanel {
                 break;
             }
             case 'submitPr':
-                vscode.commands.executeCommand('masonDevTools.submitPr');
+                vscode.commands.executeCommand('prForge.submitPr');
+                break;
+            case 'submitDraftPr':
+                vscode.commands.executeCommand('prForge.submitDraftPr');
                 break;
         }
     }
@@ -125,34 +128,57 @@ export class PreviewPanel {
             toolbarRightHtml = `
                 <button class="btn btn-secondary" id="btn-copy-title">Copy Title</button>
                 <button class="btn btn-secondary" id="btn-copy-body">Copy Body</button>
-                <button class="btn btn-submit-pr" id="btn-submit-pr">Submit PR to GitHub</button>
-                <button class="btn btn-secondary" id="btn-open-editor">Open in Editor</button>`;
+                <button class="btn btn-secondary" id="btn-open-editor">Open in Editor</button>
+                <button class="btn btn-draft-pr" id="btn-submit-draft">Submit as Draft</button>
+                <button class="btn btn-submit-pr" id="btn-submit-pr">Submit PR</button>`;
         } else {
             toolbarRightHtml = `
                 <button class="btn btn-secondary" id="btn-copy-review">Copy Review</button>
                 <button class="btn btn-secondary" id="btn-open-editor">Open in Editor</button>`;
         }
 
-        // Build content area
+        // Build content area — GitHub-style PR preview
         let contentHtml = '';
-        if (isPrBody) {
-            const prTitle = (this._content as { kind: 'prBody'; title: string }).title;
+        if (this._content.kind === 'prBody') {
+            const prTitle = this._content.title;
+            const headBranch = this._content.headBranch || 'HEAD';
+            const baseBranch = this._content.baseBranch || 'base';
             const bodyHtml = renderMarkdown(this._content.body);
             contentHtml = `
-                <div class="content-section">
-                    <div class="section-label">PR Title</div>
-                    <pre class="pr-title">${escapeHtml(prTitle)}</pre>
+                <div class="gh-pr-header">
+                    <div class="gh-pr-title-row">
+                        <h1 class="gh-pr-title">${escapeHtml(prTitle)}</h1>
+                    </div>
+                    <div class="gh-pr-meta">
+                        <span class="gh-pr-status">✨ Want to merge</span>
+                        <span class="gh-pr-branch">
+                            <span class="gh-branch-icon">⎇</span>
+                            <span class="gh-branch-name current">${escapeHtml(headBranch)}</span>
+                            <span class="gh-arrow">→</span>
+                            <span class="gh-branch-name base">${escapeHtml(baseBranch)}</span>
+                        </span>
+                    </div>
                 </div>
-                <div class="content-section">
-                    <div class="section-label">PR Body</div>
-                    <div class="markdown-body">${bodyHtml}</div>
+                <div class="gh-comment-box">
+                    <div class="gh-comment-header">
+                        <div class="gh-comment-author-avatar">⬡</div>
+                        <div class="gh-comment-author-info">
+                            <strong>PR Forge</strong> generated this PR description
+                        </div>
+                    </div>
+                    <div class="gh-comment-body markdown-body">${bodyHtml}</div>
                 </div>`;
         } else {
             const bodyHtml = renderMarkdown(this._content.body);
             contentHtml = `
-                <div class="content-section">
-                    <div class="section-label">Review</div>
-                    <div class="markdown-body">${bodyHtml}</div>
+                <div class="gh-comment-box">
+                    <div class="gh-comment-header">
+                        <div class="gh-comment-author-avatar">✦</div>
+                        <div class="gh-comment-author-info">
+                            <strong>PR Forge</strong> — Code Review
+                        </div>
+                    </div>
+                    <div class="gh-comment-body markdown-body">${bodyHtml}</div>
                 </div>`;
         }
 
@@ -192,12 +218,14 @@ export class PreviewPanel {
   const btnCopyReview = el('btn-copy-review');
   const btnOpenEditor = el('btn-open-editor');
   const btnSubmitPr   = el('btn-submit-pr');
+  const btnSubmitDraft = el('btn-submit-draft');
 
-  if (btnCopyTitle)  btnCopyTitle.addEventListener('click',  () => vscode.postMessage({ command: 'copyTitle' }));
-  if (btnCopyBody)   btnCopyBody.addEventListener('click',   () => vscode.postMessage({ command: 'copyBody' }));
-  if (btnCopyReview) btnCopyReview.addEventListener('click', () => vscode.postMessage({ command: 'copyReview' }));
-  if (btnOpenEditor) btnOpenEditor.addEventListener('click', () => vscode.postMessage({ command: 'openInEditor' }));
-  if (btnSubmitPr)   btnSubmitPr.addEventListener('click',   () => vscode.postMessage({ command: 'submitPr' }));
+  if (btnCopyTitle)   btnCopyTitle.addEventListener('click',   () => vscode.postMessage({ command: 'copyTitle' }));
+  if (btnCopyBody)    btnCopyBody.addEventListener('click',    () => vscode.postMessage({ command: 'copyBody' }));
+  if (btnCopyReview)  btnCopyReview.addEventListener('click',  () => vscode.postMessage({ command: 'copyReview' }));
+  if (btnOpenEditor)  btnOpenEditor.addEventListener('click',  () => vscode.postMessage({ command: 'openInEditor' }));
+  if (btnSubmitPr)    btnSubmitPr.addEventListener('click',    () => vscode.postMessage({ command: 'submitPr' }));
+  if (btnSubmitDraft) btnSubmitDraft.addEventListener('click', () => vscode.postMessage({ command: 'submitDraftPr' }));
 </script>
 </body>
 </html>`;

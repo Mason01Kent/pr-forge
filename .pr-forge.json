@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "projectName": "PR Forge",
+  "baseBranch": "main",
+  "projectType": "unknown",
+  "testCommand": "",
+  "outputDirectory": ".pr",
+  "provider": "deepseek",
+  "defaultModel": "deepseek-chat",
+  "reviewRulesFiles": [
+    "README.md"
+  ],
+  "prRiskAreas": [
+    "security",
+    "tests",
+    "configuration",
+    "data integrity",
+    "deployment risk"
+  ],
+  "prBodySections": [
+    "Summary",
+    "Why this matters",
+    "Changes",
+    "Tests / verification",
+    "Review focus",
+    "Risks / follow-ups"
+  ]
+}
