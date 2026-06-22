@@ -8,6 +8,7 @@ export type PreviewContent =
     | { kind: 'prReview'; body: string; timestamp: string };
 
 export class PreviewPanel {
+    static readonly viewType = 'masonDevTools.preview';
     private static _instance?: PreviewPanel;
 
     private readonly _panel: vscode.WebviewPanel;
@@ -50,7 +51,7 @@ export class PreviewPanel {
     ): void {
         if (PreviewPanel._instance) {
             PreviewPanel._instance._panel.reveal(vscode.ViewColumn.Beside);
-            PreviewPanel._instance._update(content);
+            PreviewPanel._instance.update(content);
             return;
         }
 
@@ -69,7 +70,7 @@ export class PreviewPanel {
         PreviewPanel._instance = new PreviewPanel(panel, extensionUri, content, workspaceFolderPath, outputDirectory);
     }
 
-    private _update(content: PreviewContent): void {
+    public update(content: PreviewContent): void {
         this._content = content;
         const title = content.kind === 'prBody' ? 'PR Body' : 'PR Review';
         this._panel.title = title;
@@ -85,8 +86,10 @@ export class PreviewPanel {
                 }
                 break;
             case 'copyBody':
-                vscode.env.clipboard.writeText(this._content.body);
-                vscode.window.showInformationMessage('PR body copied to clipboard');
+                if (this._content.kind === 'prBody') {
+                    vscode.env.clipboard.writeText(this._content.body);
+                    vscode.window.showInformationMessage('PR body copied to clipboard');
+                }
                 break;
             case 'copyReview':
                 vscode.env.clipboard.writeText(this._content.body);

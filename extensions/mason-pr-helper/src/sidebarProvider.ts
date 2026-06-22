@@ -4,10 +4,17 @@ import * as crypto from 'crypto';
 export interface SidebarState {
     projectName: string | null;
     configExists: boolean;
+    provider: string | null;
+    providerKeySet: boolean;
     lastRunType: 'prBody' | 'prReview' | null;
     lastRunStatus: 'success' | 'error' | null;
     lastRunTimestamp: string | null;
     isRunning: boolean;
+    prBodyReady: boolean;
+    viewMode: 'tools' | 'preview';
+    previewKind: 'prBody' | 'prReview' | null;
+    previewTitle: string | null;
+    previewBody: string | null;
 }
 
 type WebviewToExtMsg =
@@ -16,7 +23,11 @@ type WebviewToExtMsg =
     | { command: 'generatePrBody' }
     | { command: 'generatePrReview' }
     | { command: 'submitPr' }
-    | { command: 'ready' };
+    | { command: 'setApiKey' }
+    | { command: 'ready' }
+    | { command: 'showTools' }
+    | { command: 'copyPreviewTitle' }
+    | { command: 'copyPreviewBody' };
 
 type ExtToWebviewMsg =
     | { type: 'stateUpdate'; state: SidebarState }
@@ -29,6 +40,10 @@ export interface SidebarCallbacks {
     onGeneratePrBody: () => Promise<void>;
     onGeneratePrReview: () => Promise<void>;
     onSubmitPr: () => Promise<void>;
+    onSetApiKey: () => Promise<void>;
+    onShowTools: () => void;
+    onCopyPreviewTitle: (title: string) => void;
+    onCopyPreviewBody: () => void;
 }
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -38,11 +53,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private _state: SidebarState = {
         projectName: null,
         configExists: false,
+        provider: null,
+        providerKeySet: false,
         lastRunType: null,
         lastRunStatus: null,
         lastRunTimestamp: null,
         isRunning: false,
-    };
+        prBodyReady: false,
+        viewMode: 'tools',
+        previewKind: null,
+        previewTitle: null,
+        previewBody: null,
+    };  
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -83,6 +105,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'submitPr':
                     this._callbacks.onSubmitPr();
                     break;
+                case 'setApiKey':
+                    this._callbacks.onSetApiKey();
+                    break;
+                case 'showTools':
+                    this._callbacks.onShowTools();
+                    break;
+                case 'copyPreviewTitle':
+                    if (this._state.previewTitle) {
+                        this._callbacks.onCopyPreviewTitle(this._state.previewTitle);
+                    }
+                    break;
+                case 'copyPreviewBody':
+                    this._callbacks.onCopyPreviewBody();
+                    break;
             }
         });
     }
@@ -102,6 +138,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this._state.isRunning = false;
         this._state.lastRunStatus = success ? 'success' : 'error';
         this._state.lastRunTimestamp = new Date().toLocaleTimeString();
+        if (runType === 'prBody' && success) this._state.prBodyReady = true;
         this._post({ type: 'runEnd', runType, success, timestamp: this._state.lastRunTimestamp });
     }
 
@@ -129,6 +166,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
 
+<!-- ====== TOOLS VIEW ====== -->
+<div id="tools-view">
   <div class="header">
     <span class="header-icon">⬡</span>
     <h2 class="header-title">Mason PR Helper</h2>
@@ -143,6 +182,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       <span class="label">Config</span>
       <span class="badge warn" id="config-badge">Not found</span>
     </div>
+    <div class="card-row">
+      <span class="label">Provider</span>
+      <span class="value" id="provider-name">—</span>
+    </div>
+    <div class="card-row">
+      <span class="label">API Key</span>
+      <span class="badge warn" id="key-badge">Not set</span>
+    </div>
     <div class="card-row" id="last-run-row" style="display:none">
       <span class="label">Last run</span>
       <span class="value" id="last-run-info"></span>
@@ -150,6 +197,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="actions">
+    <button class="btn btn-secondary" id="btn-set-key">🔑 Set API Key</button>
     <button class="btn btn-secondary" id="btn-init-config">⚙ Init Config</button>
     <button class="btn btn-secondary" id="btn-open-config">✎ Open Config</button>
     <hr class="divider">
@@ -166,22 +214,61 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="spinner"></div>
     <span id="status-message">Running...</span>
   </div>
+</div>
+
+<!-- ====== PREVIEW VIEW ====== -->
+<div id="preview-view" style="display:none">
+  <div class="preview-header">
+    <button class="btn btn-back" id="btn-back">← Back</button>
+    <span class="preview-header-title" id="preview-header-title">PR Body</span>
+  </div>
+  <div class="preview-actions" id="preview-actions">
+    <button class="btn btn-preview-action" id="btn-preview-copy-title" style="display:none">📋 Copy Title</button>
+    <button class="btn btn-preview-action" id="btn-preview-copy-body">📋 Copy Body</button>
+    <button class="btn btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none">↑ Submit PR</button>
+  </div>
+  <div class="preview-content" id="preview-content"></div>
+</div>
 
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
 
   const el = (id) => document.getElementById(id);
-  const allBtns = ['btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr'].map(el);
+  const toolsView = el('tools-view');
+  const previewView = el('preview-view');
 
+  // Tools view buttons
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr'].map(el);
+  el('btn-set-key').addEventListener('click',    () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
   el('btn-open-config').addEventListener('click', () => vscode.postMessage({ command: 'openConfig' }));
   el('btn-pr-body').addEventListener('click',     () => vscode.postMessage({ command: 'generatePrBody' }));
   el('btn-pr-review').addEventListener('click',   () => vscode.postMessage({ command: 'generatePrReview' }));
   el('btn-submit-pr').addEventListener('click',   () => vscode.postMessage({ command: 'submitPr' }));
 
-  function applyState(state) {
-    el('project-name').textContent = state.projectName || '—';
+  // Preview view buttons
+  el('btn-back').addEventListener('click', () => vscode.postMessage({ command: 'showTools' }));
+  el('btn-preview-copy-title').addEventListener('click', () => vscode.postMessage({ command: 'copyPreviewTitle' }));
+  el('btn-preview-copy-body').addEventListener('click',  () => vscode.postMessage({ command: 'copyPreviewBody' }));
+  el('btn-preview-submit').addEventListener('click',     () => vscode.postMessage({ command: 'submitPr' }));
 
+  function switchView(mode) {
+    if (mode === 'preview') {
+      toolsView.style.display = 'none';
+      previewView.style.display = 'flex';
+      previewView.style.flexDirection = 'column';
+    } else {
+      toolsView.style.display = '';
+      previewView.style.display = 'none';
+    }
+  }
+
+  function applyState(state) {
+    // Switch view
+    switchView(state.viewMode || 'tools');
+
+    // Tools view fields
+    el('project-name').textContent = state.projectName || '—';
     const badge = el('config-badge');
     if (state.configExists) {
       badge.textContent = 'Found ✓';
@@ -190,6 +277,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       badge.textContent = 'Not found';
       badge.className = 'badge warn';
     }
+    el('provider-name').textContent = state.provider ? state.provider.charAt(0).toUpperCase() + state.provider.slice(1) : '—';
+    const keyBadge = el('key-badge');
+    const noAuth = state.provider === 'ollama';
+    keyBadge.textContent = noAuth ? 'Not needed' : (state.providerKeySet ? 'Set ✓' : 'Not set');
+    keyBadge.className   = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
 
     if (state.lastRunTimestamp) {
       const label = state.lastRunType === 'prBody' ? 'PR Body' : 'PR Review';
@@ -198,10 +290,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('last-run-row').style.display = '';
     }
 
+    el('btn-submit-pr').style.display = state.prBodyReady ? '' : 'none';
+
     if (state.isRunning) {
       setRunning(true, state.lastRunType === 'prBody' ? 'Generating PR Body...' : 'Generating PR Review...');
     } else {
       setRunning(false, '');
+    }
+
+    // Preview view fields
+    const isPrBody = state.previewKind === 'prBody';
+    el('preview-header-title').textContent = isPrBody ? 'PR Body' : 'PR Review';
+    el('btn-preview-copy-title').style.display = isPrBody ? '' : 'none';
+    el('btn-preview-submit').style.display = (isPrBody && state.prBodyReady) ? '' : 'none';
+
+    if (state.previewBody) {
+      el('preview-content').innerHTML = state.previewBody;
+    } else {
+      el('preview-content').innerHTML = '';
     }
   }
 

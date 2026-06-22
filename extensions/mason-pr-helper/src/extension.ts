@@ -1,17 +1,20 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as crypto from 'crypto';
-import { spawn, ChildProcess, execSync } from 'child_process';
+import { execSync } from 'child_process';
 import { SidebarProvider } from './sidebarProvider';
 import { PreviewPanel, PreviewContent } from './previewPanel';
+import { renderMarkdown } from './markdownRenderer';
+import { generatePr } from './prGenerator';
+import { PROVIDERS, DEFAULT_MODELS } from './llmClient';
+import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
 import { parseGitHubRemote, createPullRequest } from './githubClient';
 
 const OUTPUT_CHANNEL_NAME = 'MasonDevTools';
 const CONFIG_FILE_NAME = '.mason-devtools.json';
 
-let extensionPath: string;
 let extensionUri: vscode.Uri;
+let extensionContext: vscode.ExtensionContext;
 
 interface MasonDevToolsConfig {
     schemaVersion: number;
@@ -20,6 +23,7 @@ interface MasonDevToolsConfig {
     projectType: string;
     testCommand: string;
     outputDirectory: string;
+    provider: string;
     defaultModel: string;
     reviewRulesFiles: string[];
     prRiskAreas: string[];
@@ -30,7 +34,8 @@ let outputChannel: vscode.OutputChannel;
 let statusBarTools: vscode.StatusBarItem;
 let statusBarPrBody: vscode.StatusBarItem;
 let statusBarPrReview: vscode.StatusBarItem;
-let sidebarProvider: SidebarProvider;
+let provider: SidebarProvider;
+let lastPreviewMarkdown = '';
 
 function log(msg: string): void {
     outputChannel.appendLine(`[${new Date().toLocaleTimeString()}] ${msg}`);
@@ -66,12 +71,6 @@ async function resolveTargetProjectFolder(): Promise<vscode.WorkspaceFolder | un
 
 function getConfigPath(workspaceFolder: vscode.WorkspaceFolder): string {
     return path.join(workspaceFolder.uri.fsPath, CONFIG_FILE_NAME);
-}
-
-function getScriptPath(): string {
-    const override = vscode.workspace.getConfiguration('masonDevTools').get<string>('scriptPath');
-    if (override && override.trim()) return override.trim();
-    return path.join(extensionPath, '..', '..', 'scripts', 'pr-helper', 'New-PrRequest.ps1');
 }
 
 function readConfig(workspaceFolder: vscode.WorkspaceFolder): MasonDevToolsConfig | null {
@@ -142,7 +141,8 @@ async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder):
     const config: MasonDevToolsConfig = {
         schemaVersion: 1, projectName, baseBranch: 'main', projectType,
         testCommand: testCommands[projectType] || '', outputDirectory: '.pr',
-        defaultModel: 'deepseek-v4-pro', reviewRulesFiles, prRiskAreas,
+        provider: 'deepseek', defaultModel: 'deepseek-chat',
+        reviewRulesFiles, prRiskAreas,
         prBodySections: ['Summary', 'Why this matters', 'Changes', 'Tests / verification', 'Review focus', 'Risks / follow-ups']
     };
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
@@ -163,66 +163,62 @@ async function openProjectConfig(): Promise<void> {
     await vscode.window.showTextDocument(doc);
 }
 
-async function runPowerShellScript(workspaceFolder: vscode.WorkspaceFolder, config: MasonDevToolsConfig, generateReview: boolean): Promise<boolean> {
-    const scriptPath = getScriptPath();
-    if (!fs.existsSync(scriptPath)) {
-        const msg = `MasonDevTools: PowerShell script not found at ${scriptPath}`;
-        log(msg); vscode.window.showErrorMessage(msg); return false;
-    }
-    if (!process.env.DEEPSEEK_API_KEY) {
-        const msg = 'MasonDevTools: DEEPSEEK_API_KEY environment variable is not set.';
-        log(msg); vscode.window.showErrorMessage(msg); return false;
-    }
-    const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-ProjectPath', workspaceFolder.uri.fsPath, '-BaseBranch', config.baseBranch];
-    if (generateReview) args.push('-GenerateReview');
-    log(`Running: powershell ${args.join(' ')}`);
-    return new Promise<boolean>((resolve) => {
-        const proc: ChildProcess = spawn('powershell.exe', args, { cwd: workspaceFolder.uri.fsPath, env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe'] });
-        proc.stdout?.on('data', (data: Buffer) => log(data.toString().trimEnd()));
-        proc.stderr?.on('data', (data: Buffer) => log(`[stderr] ${data.toString().trimEnd()}`));
-        proc.on('error', (err: Error) => { log(`Failed to spawn PowerShell: ${err.message}`); vscode.window.showErrorMessage(`MasonDevTools: ${err.message}`); resolve(false); });
-        proc.on('close', (code: number | null) => {
-            if (code === 0) { log('Script completed successfully.'); resolve(true); }
-            else { log(`Script exited with code ${code}`); vscode.window.showErrorMessage(`MasonDevTools: Script exited with code ${code}.`); resolve(false); }
-        });
-    });
-}
-
-async function openGeneratedFile(workspaceFolder: vscode.WorkspaceFolder, config: MasonDevToolsConfig, filename: string): Promise<void> {
-    const filePath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, filename);
-    if (fs.existsSync(filePath)) {
-        const doc = await vscode.workspace.openTextDocument(filePath);
-        await vscode.window.showTextDocument(doc, { preview: false });
-    }
-}
-
 async function generatePrBody(): Promise<void> {
     const workspaceFolder = await resolveTargetProjectFolder();
     if (!workspaceFolder) { vscode.window.showErrorMessage('MasonDevTools: No workspace folder open.'); return; }
     const config = await ensureConfig(workspaceFolder);
     if (!config) return;
 
-    sidebarProvider.notifyRunStart('prBody');
-
-    const success = await withStatusBarSpinner(statusBarPrBody, '$(git-pull-request) PR Body', async () => {
-        outputChannel.show(true);
-        log('Generating PR Body...');
-        return runPowerShellScript(workspaceFolder, config, false);
-    });
-
-    if (success) {
-        const titlePath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, 'PR_TITLE.txt');
-        const bodyPath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, 'PR_BODY.md');
-        let title = '';
-        let body = '';
-        if (fs.existsSync(titlePath)) title = fs.readFileSync(titlePath, 'utf-8').trim();
-        if (fs.existsSync(bodyPath)) body = fs.readFileSync(bodyPath, 'utf-8');
-        const content: PreviewContent = { kind: 'prBody', title, body, timestamp: new Date().toLocaleString() };
-        PreviewPanel.createOrShow(extensionUri, content, workspaceFolder.uri.fsPath, config.outputDirectory);
-        await openGeneratedFile(workspaceFolder, config, 'PR_BODY.md');
+    const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
+    const providerInfo = PROVIDERS[config.provider];
+    if (!providerInfo?.noAuth && !apiKey) {
+        const set = await vscode.window.showErrorMessage(
+            `MasonDevTools: No API key set for ${config.provider}. Set one now?`, 'Set Key'
+        );
+        if (set === 'Set Key') await promptSetApiKey(extensionContext, config.provider);
+        return;
     }
 
-    sidebarProvider.notifyRunEnd('prBody', success);
+    outputChannel.show(true);
+    provider.notifyRunStart('prBody');
+    const success = await withStatusBarSpinner(statusBarPrBody, '$(git-pull-request) PR Body', async () => {
+        try {
+            const result = await generatePr({
+                workspacePath: workspaceFolder.uri.fsPath,
+                baseBranch: config.baseBranch,
+                outputDirectory: config.outputDirectory,
+                projectName: config.projectName,
+                prRiskAreas: config.prRiskAreas,
+                prBodySections: config.prBodySections,
+                reviewRulesFiles: config.reviewRulesFiles,
+                testCommand: config.testCommand,
+                generateReview: false,
+                llm: { provider: config.provider, apiKey, model: config.defaultModel },
+                onLog: (msg) => log(msg),
+            });
+            PreviewPanel.createOrShow(extensionUri,
+                { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString() },
+                workspaceFolder.uri.fsPath, config.outputDirectory
+            );
+            // Show preview in sidebar too
+            lastPreviewMarkdown = result.body;
+            provider.updateState({
+                viewMode: 'preview',
+                previewKind: 'prBody',
+                previewTitle: result.title,
+                previewBody: renderMarkdown(result.body),
+                prBodyReady: true,
+            });
+            return true;
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`Error: ${msg}`);
+            vscode.window.showErrorMessage(`MasonDevTools: ${msg}`);
+            return false;
+        }
+    });
+    provider.notifyRunEnd('prBody', success);
+    provider.updateState({ configExists: true, projectName: config.projectName });
 }
 
 async function generatePrReview(): Promise<void> {
@@ -231,25 +227,67 @@ async function generatePrReview(): Promise<void> {
     const config = await ensureConfig(workspaceFolder);
     if (!config) return;
 
-    sidebarProvider.notifyRunStart('prReview');
-
-    const success = await withStatusBarSpinner(statusBarPrReview, '$(comment-discussion) PR Review', async () => {
-        outputChannel.show(true);
-        log('Generating Full PR Review...');
-        return runPowerShellScript(workspaceFolder, config, true);
-    });
-
-    if (success) {
-        const reviewPath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, 'PR_REVIEW.md');
-        if (fs.existsSync(reviewPath)) {
-            const review = fs.readFileSync(reviewPath, 'utf-8');
-            const content: PreviewContent = { kind: 'prReview', body: review, timestamp: new Date().toLocaleString() };
-            PreviewPanel.createOrShow(extensionUri, content, workspaceFolder.uri.fsPath, config.outputDirectory);
-        }
-        await openGeneratedFile(workspaceFolder, config, 'PR_REVIEW.md');
+    const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
+    const providerInfo = PROVIDERS[config.provider];
+    if (!providerInfo?.noAuth && !apiKey) {
+        const set = await vscode.window.showErrorMessage(
+            `MasonDevTools: No API key set for ${config.provider}. Set one now?`, 'Set Key'
+        );
+        if (set === 'Set Key') await promptSetApiKey(extensionContext, config.provider);
+        return;
     }
 
-    sidebarProvider.notifyRunEnd('prReview', success);
+    outputChannel.show(true);
+    provider.notifyRunStart('prReview');
+    const success = await withStatusBarSpinner(statusBarPrReview, '$(comment-discussion) PR Review', async () => {
+        try {
+            const result = await generatePr({
+                workspacePath: workspaceFolder.uri.fsPath,
+                baseBranch: config.baseBranch,
+                outputDirectory: config.outputDirectory,
+                projectName: config.projectName,
+                prRiskAreas: config.prRiskAreas,
+                prBodySections: config.prBodySections,
+                reviewRulesFiles: config.reviewRulesFiles,
+                testCommand: config.testCommand,
+                generateReview: true,
+                llm: { provider: config.provider, apiKey, model: config.defaultModel },
+                onLog: (msg) => log(msg),
+            });
+            if (result.review) {
+                PreviewPanel.createOrShow(extensionUri,
+                    { kind: 'prReview', body: result.review, timestamp: new Date().toLocaleString() },
+                    workspaceFolder.uri.fsPath, config.outputDirectory
+                );
+                // Show preview in sidebar too
+                lastPreviewMarkdown = result.review;
+                provider.updateState({
+                    viewMode: 'preview',
+                    previewKind: 'prReview',
+                    previewTitle: null,
+                    previewBody: renderMarkdown(result.review),
+                });
+            }
+            return true;
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`Error: ${msg}`);
+            vscode.window.showErrorMessage(`MasonDevTools: ${msg}`);
+            return false;
+        }
+    });
+    provider.notifyRunEnd('prReview', success);
+    provider.updateState({ configExists: true, projectName: config.projectName });
+}
+
+async function setApiKey(): Promise<void> {
+    const wf = await resolveTargetProjectFolder();
+    const config = wf ? readConfig(wf) : null;
+    const result = await promptSetApiKey(extensionContext, config?.provider);
+    if (result && wf && config) {
+        const keySet = await hasApiKey(extensionContext, result);
+        provider.updateState({ provider: result, providerKeySet: keySet });
+    }
 }
 
 async function submitPr(): Promise<void> {
@@ -331,8 +369,8 @@ async function submitPr(): Promise<void> {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-    extensionPath = context.extensionPath;
     extensionUri = context.extensionUri;
+    extensionContext = context;
     outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
     log('MasonDevTools extension activated.');
 
@@ -354,34 +392,73 @@ export function activate(context: vscode.ExtensionContext): void {
     statusBarPrReview.tooltip = 'Generate Full PR Review';
     statusBarPrReview.show();
 
-    sidebarProvider = new SidebarProvider(extensionUri, {
+    provider = new SidebarProvider(extensionUri, {
         onInitConfig: async () => {
             const wf = await resolveTargetProjectFolder();
             if (wf) {
                 await initializeProjectConfig(wf);
                 const cfg = readConfig(wf);
-                sidebarProvider.updateState({ configExists: cfg !== null, projectName: cfg?.projectName ?? wf.name });
+                if (cfg) {
+                    const keySet = await hasApiKey(context, cfg.provider);
+                    provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet });
+                } else {
+                    provider.updateState({ configExists: false, projectName: wf.name });
+                }
             }
         },
         onOpenConfig: openProjectConfig,
         onGeneratePrBody: generatePrBody,
         onGeneratePrReview: generatePrReview,
         onSubmitPr: submitPr,
+        onSetApiKey: setApiKey,
+        onShowTools: () => {
+            provider.updateState({ viewMode: 'tools' });
+        },
+        onCopyPreviewTitle: (title: string) => {
+            vscode.env.clipboard.writeText(title);
+            vscode.window.showInformationMessage('PR title copied to clipboard');
+        },
+        onCopyPreviewBody: () => {
+            if (lastPreviewMarkdown) {
+                vscode.env.clipboard.writeText(lastPreviewMarkdown);
+                vscode.window.showInformationMessage('Content copied to clipboard');
+            }
+        },
     });
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, sidebarProvider));
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, provider));
+
+    // Push initial sidebar state from active workspace
+    (async () => {
+        const wf = await resolveTargetProjectFolder();
+        if (wf) {
+            const cfg = readConfig(wf);
+            if (cfg) {
+                const keySet = await hasApiKey(context, cfg.provider);
+                provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet });
+            } else {
+                provider.updateState({ configExists: false, projectName: wf.name });
+            }
+        }
+    })();
 
     context.subscriptions.push(vscode.commands.registerCommand('masonDevTools.initializeProjectConfig', async () => {
         const wf = await resolveTargetProjectFolder();
         if (wf) {
             await initializeProjectConfig(wf);
             const cfg = readConfig(wf);
-            sidebarProvider.updateState({ configExists: cfg !== null, projectName: cfg?.projectName ?? wf.name });
+            if (cfg) {
+                const keySet = await hasApiKey(context, cfg.provider);
+                provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet });
+            } else {
+                provider.updateState({ configExists: false, projectName: wf.name });
+            }
         }
     }));
     context.subscriptions.push(vscode.commands.registerCommand('masonDevTools.openProjectConfig', openProjectConfig));
     context.subscriptions.push(vscode.commands.registerCommand('masonDevTools.generatePrBody', generatePrBody));
     context.subscriptions.push(vscode.commands.registerCommand('masonDevTools.generatePrReview', generatePrReview));
     context.subscriptions.push(vscode.commands.registerCommand('masonDevTools.submitPr', submitPr));
+    context.subscriptions.push(vscode.commands.registerCommand('masonDevTools.setApiKey', setApiKey));
     context.subscriptions.push(outputChannel, statusBarTools, statusBarPrBody, statusBarPrReview);
 
     log('Commands registered.');

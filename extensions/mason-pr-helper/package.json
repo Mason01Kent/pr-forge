@@ -65,6 +65,10 @@
       {
         "command": "masonDevTools.submitPr",
         "title": "MasonDevTools: Submit PR to GitHub"
+      },
+      {
+        "command": "masonDevTools.setApiKey",
+        "title": "MasonDevTools: Set API Key"
       }
     ],
     "menus": {
