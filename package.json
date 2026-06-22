@@ -1,0 +1,110 @@
+{
+  "name": "pr-forge",
+  "displayName": "PR Forge",
+  "description": "AI-powered PR description and review generator. Supports DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, and Ollama.",
+  "version": "0.1.0",
+  "publisher": "masonkent",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mason01Kent/pr-forge"
+  },
+  "bugs": {
+    "url": "https://github.com/Mason01Kent/pr-forge/issues"
+  },
+  "homepage": "https://github.com/Mason01Kent/pr-forge#readme",
+  "keywords": [
+    "pull request",
+    "pr",
+    "code review",
+    "ai",
+    "github"
+  ],
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:prForge.sidebar"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "prForge",
+          "title": "PR Forge",
+          "icon": "media/pr-forge-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "prForge": [
+        {
+          "type": "webview",
+          "id": "prForge.sidebar",
+          "name": "PR Tools"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "prForge.initializeProjectConfig",
+        "title": "PR Forge: Initialize Project Config"
+      },
+      {
+        "command": "prForge.openProjectConfig",
+        "title": "PR Forge: Open Project Config"
+      },
+      {
+        "command": "prForge.generatePrBody",
+        "title": "PR Forge: Generate PR Body"
+      },
+      {
+        "command": "prForge.generatePrReview",
+        "title": "PR Forge: Generate Full PR Review"
+      },
+      {
+        "command": "prForge.submitPr",
+        "title": "PR Forge: Submit PR to GitHub"
+      },
+      {
+        "command": "prForge.submitDraftPr",
+        "title": "PR Forge: Submit Draft PR to GitHub"
+      },
+      {
+        "command": "prForge.setApiKey",
+        "title": "PR Forge: Set API Key"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "prForge.initializeProjectConfig",
+          "when": "view == prForge.sidebar",
+          "group": "navigation"
+        },
+        {
+          "command": "prForge.openProjectConfig",
+          "when": "view == prForge.sidebar",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}
