@@ -16,15 +16,23 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 - **Multi-provider** — switch providers any time; API keys are stored in VS Code SecretStorage, never in project files.
 - **Project type detection** — auto-detects .NET, Node, React, and Python to seed sensible defaults.
 
-## Repo layout
+## Install
+
+**Option A — From this repo (no build required):**
+
+Download [`extensions/pr-forge/pr-forge-0.1.0.vsix`](extensions/pr-forge/pr-forge-0.1.0.vsix) then install it in VS Code:
 
 ```
-extensions/pr-forge/      VS Code extension (TypeScript)
-templates/                Example PR review rule sets
-docs/setup.md             Setup & troubleshooting guide
+Extensions panel (Ctrl+Shift+X) → ⋯ menu → Install from VSIX…
 ```
 
-## Quick start
+Or via the CLI:
+
+```powershell
+code --install-extension extensions/pr-forge/pr-forge-0.1.0.vsix
+```
+
+**Option B — Build from source:**
 
 ```powershell
 cd extensions/pr-forge
@@ -32,8 +40,16 @@ npm install
 npm run compile
 ```
 
-Then open the folder in VS Code and press `F5` to launch the Extension Development Host.
+Then press `F5` in VS Code to launch the Extension Development Host.
 See [docs/setup.md](docs/setup.md) for the full walkthrough.
+
+## Repo layout
+
+```
+extensions/pr-forge/      VS Code extension (TypeScript)
+templates/                Example PR review rule sets
+docs/setup.md             Setup & troubleshooting guide
+```
 
 ## Project config
 
