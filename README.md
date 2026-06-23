@@ -33,10 +33,10 @@ ext install masonkent.pr-forge
 
 **Option B — directly from this repo** (no build required):
 
-Download [`extensions/pr-forge/pr-forge-0.4.0.vsix`](extensions/pr-forge/pr-forge-0.4.0.vsix), then install it:
+Download [`extensions/pr-forge/pr-forge-0.4.1.vsix`](extensions/pr-forge/pr-forge-0.4.1.vsix), then install it:
 
 ```
-code --install-extension extensions/pr-forge/pr-forge-0.4.0.vsix
+code --install-extension extensions/pr-forge/pr-forge-0.4.1.vsix
 ```
 
 Or via the Extensions panel: `⋯ menu → Install from VSIX…`
