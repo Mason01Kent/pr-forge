@@ -152,6 +152,33 @@ async function restoreOutputState(workspaceFolder: vscode.WorkspaceFolder, confi
     log(`Restored output state from ${outputDir} (${lastRunType}, ${timestamp})`);
 }
 
+async function clearPrOutput(): Promise<void> {
+    const wf = getWorkspaceFolderWithConfig();
+    if (!wf) return;
+    const cfg = readConfig(wf);
+    if (cfg) {
+        const outputDir = path.join(wf.uri.fsPath, cfg.outputDirectory);
+        for (const f of ['PR_TITLE.txt', 'PR_BODY.md', 'PR_REVIEW.md']) {
+            const p = path.join(outputDir, f);
+            if (fs.existsSync(p)) { fs.unlinkSync(p); }
+        }
+    }
+    lastPreviewMarkdown = '';
+    provider.updateState({
+        prBodyReady: false,
+        lastRunType: null,
+        lastRunStatus: null,
+        lastRunTimestamp: null,
+        previewTitle: null,
+        previewBody: null,
+        submittedPrNumber: null,
+        submittedPrUrl: null,
+        submittedPrTimestamp: null,
+        viewMode: 'tools',
+    });
+    log('PR draft cleared.');
+}
+
 async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder): Promise<void> {
     const configPath = getConfigPath(workspaceFolder);
     if (fs.existsSync(configPath)) {
@@ -598,6 +625,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const url = provider.getState().submittedPrUrl;
             if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
         },
+        onClearPr: clearPrOutput,
     });
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, provider));
 
