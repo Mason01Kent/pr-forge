@@ -1,7 +1,7 @@
 import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { chatComplete, LLMClientOptions } from './llmClient';
+import { chatComplete, chatCompleteStream, LLMClientOptions } from './llmClient';
 
 export interface PrGeneratorOptions {
   workspacePath: string;
@@ -15,6 +15,10 @@ export interface PrGeneratorOptions {
   generateReview: boolean;
   llm: LLMClientOptions;
   onLog: (msg: string) => void;
+  /** Cancels the in-flight LLM/test work when aborted. */
+  signal?: AbortSignal;
+  /** Receives incremental text deltas of the primary output (body or review). */
+  onToken?: (delta: string) => void;
 }
 
 export interface PrGeneratorResult {
@@ -100,7 +104,8 @@ async function buildDiffContext(
   fileDiffs: { file: string; diff: string }[],
   llm: LLMClientOptions,
   projectName: string,
-  onLog: (msg: string) => void
+  onLog: (msg: string) => void,
+  signal?: AbortSignal
 ): Promise<string> {
   const batches = batchFileDiffs(fileDiffs);
   if (batches.length <= 1) {
@@ -110,6 +115,7 @@ async function buildDiffContext(
   onLog(`Diff too large for one pass — summarising ${batches.length} batches...`);
   const summaries: string[] = [];
   for (let i = 0; i < batches.length; i++) {
+    if (signal?.aborted) { throw new Error('Request cancelled'); }
     onLog(`  Summarising batch ${i + 1} of ${batches.length}...`);
     const summary = await chatComplete(llm, [
       {
@@ -120,7 +126,7 @@ async function buildDiffContext(
         role: 'user',
         content: `Summarise the following code changes concisely. Focus on WHAT changed and WHY it matters. Be specific about function names, classes, and logic changes. Do not pad.\n\n${batches[i]}`,
       },
-    ]);
+    ], signal);
     summaries.push(`### Batch ${i + 1} summary\n${summary}`);
   }
   return summaries.join('\n\n');
@@ -149,7 +155,7 @@ export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorR
   opts.onLog(`Files changed: ${allFiles.length}`);
 
   // Build diff context — single pass or multi-batch summarise
-  const diffContext = await buildDiffContext(fileDiffs, opts.llm, opts.projectName, opts.onLog);
+  const diffContext = await buildDiffContext(fileDiffs, opts.llm, opts.projectName, opts.onLog, opts.signal);
 
   // Load review rules — cap each file at CHUNK_SIZE/4 so one giant README
   // doesn't crowd out the diff in the final prompt
@@ -181,7 +187,7 @@ export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorR
   const systemPrompt = `You are a senior software engineer writing a GitHub pull request for the ${opts.projectName} project.
 Be specific, accurate, and concise. Use markdown formatting.`;
 
-  // Generate PR title
+  // Generate PR title (non-streaming — short response, no live preview needed)
   opts.onLog('Generating PR title...');
   const title = await chatComplete(opts.llm, [
     { role: 'system', content: systemPrompt },
@@ -198,13 +204,14 @@ ${files}
 
 Respond with ONLY the title text. No quotes, no markdown, no explanation.`,
     },
-  ]);
+  ], opts.signal);
   const cleanTitle = title.replace(/^["']|["']$/g, '').trim();
   opts.onLog(`Title: ${cleanTitle}`);
 
-  // Generate PR body
+  // Generate PR body — stream tokens to onToken so the sidebar preview fills live
   opts.onLog('Generating PR body...');
-  const body = await chatComplete(opts.llm, [
+  let body = '';
+  await chatCompleteStream(opts.llm, [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
@@ -231,14 +238,18 @@ Risk areas to highlight: ${opts.prRiskAreas.join(', ')}
 
 Write in markdown. Be specific about what changed and why.`,
     },
-  ]);
+  ], (delta) => {
+    body += delta;
+    opts.onToken?.(delta);
+  }, opts.signal);
   opts.onLog('PR body generated.');
 
-  // Generate PR review (optional)
+  // Generate PR review (optional) — also streamed
   let review: string | undefined;
   if (opts.generateReview) {
     opts.onLog('Generating PR review...');
-    review = await chatComplete(opts.llm, [
+    review = '';
+    await chatCompleteStream(opts.llm, [
       { role: 'system', content: systemPrompt },
       {
         role: 'user',
@@ -261,7 +272,10 @@ ${diffContext}
 Test output:
 ${testOutput}`,
       },
-    ]);
+    ], (delta) => {
+      review! += delta;
+      opts.onToken?.(delta);
+    }, opts.signal);
     opts.onLog('PR review generated.');
   }
 

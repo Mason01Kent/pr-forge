@@ -8,7 +8,7 @@ import { renderMarkdown } from './markdownRenderer';
 import { generatePr } from './prGenerator';
 import { PROVIDERS, DEFAULT_MODELS } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
-import { parseGitHubRemote, createPullRequest } from './githubClient';
+import { parseGitHubRemote, createPullRequest, findOpenPullRequest, updatePullRequest } from './githubClient';
 
 const OUTPUT_CHANNEL_NAME = 'PR Forge';
 const CONFIG_FILE_NAME = '.pr-forge.json';
@@ -273,26 +273,49 @@ async function generatePrBody(): Promise<void> {
 
     outputChannel.show(true);
     provider.notifyRunStart('prBody');
+    // Switch sidebar to preview immediately so streaming tokens appear live
+    provider.updateState({ viewMode: 'preview', previewKind: 'prBody', previewTitle: null, previewBody: '' });
+    vscode.commands.executeCommand('workbench.view.extension.prForge');
+
+    const abortController = new AbortController();
+    let throttleTimer: ReturnType<typeof setTimeout> | undefined;
+    let accumulatedBody = '';
+
     const success = await withStatusBarSpinner(statusBarPrBody, '$(git-pull-request) PR Body', async () => {
         try {
-            const result = await generatePr({
-                workspacePath: workspaceFolder.uri.fsPath,
-                baseBranch: config.baseBranch,
-                outputDirectory: config.outputDirectory,
-                projectName: config.projectName,
-                prRiskAreas: config.prRiskAreas,
-                prBodySections: config.prBodySections,
-                reviewRulesFiles: config.reviewRulesFiles,
-                testCommand: config.testCommand,
-                generateReview: false,
-                llm: { provider: config.provider, apiKey, model: config.defaultModel },
-                onLog: (msg) => log(msg),
-            });
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Generating PR Body...', cancellable: true },
+                async (_progress, token) => {
+                    token.onCancellationRequested(() => abortController.abort());
+                    return generatePr({
+                        workspacePath: workspaceFolder.uri.fsPath,
+                        baseBranch: config.baseBranch,
+                        outputDirectory: config.outputDirectory,
+                        projectName: config.projectName,
+                        prRiskAreas: config.prRiskAreas,
+                        prBodySections: config.prBodySections,
+                        reviewRulesFiles: config.reviewRulesFiles,
+                        testCommand: config.testCommand,
+                        generateReview: false,
+                        llm: { provider: config.provider, apiKey, model: config.defaultModel },
+                        onLog: (msg) => log(msg),
+                        signal: abortController.signal,
+                        onToken: (delta) => {
+                            accumulatedBody += delta;
+                            if (throttleTimer) { return; }
+                            throttleTimer = setTimeout(() => {
+                                throttleTimer = undefined;
+                                provider.updateState({ previewBody: renderMarkdown(accumulatedBody) });
+                            }, 100);
+                        },
+                    });
+                }
+            );
+            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             PreviewPanel.createOrShow(extensionUri,
                 { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch },
                 workspaceFolder.uri.fsPath, config.outputDirectory
             );
-            // Show preview in sidebar too
             lastPreviewMarkdown = result.body;
             provider.updateState({
                 viewMode: 'preview',
@@ -301,11 +324,15 @@ async function generatePrBody(): Promise<void> {
                 previewBody: renderMarkdown(result.body),
                 prBodyReady: true,
             });
-            // Reveal the sidebar so the user sees the preview
-            vscode.commands.executeCommand('workbench.view.extension.prForge');
             return true;
         } catch (err: unknown) {
+            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             const msg = err instanceof Error ? err.message : String(err);
+            if (msg === 'Request cancelled') {
+                log('Generation cancelled.');
+                provider.updateState({ viewMode: 'tools' });
+                return false;
+            }
             log(`Error: ${msg}`);
             vscode.window.showErrorMessage(`PR Forge: ${msg}`);
             return false;
@@ -339,27 +366,49 @@ async function generatePrReview(): Promise<void> {
 
     outputChannel.show(true);
     provider.notifyRunStart('prReview');
+    provider.updateState({ viewMode: 'preview', previewKind: 'prReview', previewTitle: null, previewBody: '' });
+    vscode.commands.executeCommand('workbench.view.extension.prForge');
+
+    const abortController = new AbortController();
+    let throttleTimer: ReturnType<typeof setTimeout> | undefined;
+    let accumulatedReview = '';
+
     const success = await withStatusBarSpinner(statusBarPrReview, '$(comment-discussion) PR Review', async () => {
         try {
-            const result = await generatePr({
-                workspacePath: workspaceFolder.uri.fsPath,
-                baseBranch: config.baseBranch,
-                outputDirectory: config.outputDirectory,
-                projectName: config.projectName,
-                prRiskAreas: config.prRiskAreas,
-                prBodySections: config.prBodySections,
-                reviewRulesFiles: config.reviewRulesFiles,
-                testCommand: config.testCommand,
-                generateReview: true,
-                llm: { provider: config.provider, apiKey, model: config.defaultModel },
-                onLog: (msg) => log(msg),
-            });
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Generating PR Review...', cancellable: true },
+                async (_progress, token) => {
+                    token.onCancellationRequested(() => abortController.abort());
+                    return generatePr({
+                        workspacePath: workspaceFolder.uri.fsPath,
+                        baseBranch: config.baseBranch,
+                        outputDirectory: config.outputDirectory,
+                        projectName: config.projectName,
+                        prRiskAreas: config.prRiskAreas,
+                        prBodySections: config.prBodySections,
+                        reviewRulesFiles: config.reviewRulesFiles,
+                        testCommand: config.testCommand,
+                        generateReview: true,
+                        llm: { provider: config.provider, apiKey, model: config.defaultModel },
+                        onLog: (msg) => log(msg),
+                        signal: abortController.signal,
+                        onToken: (delta) => {
+                            accumulatedReview += delta;
+                            if (throttleTimer) { return; }
+                            throttleTimer = setTimeout(() => {
+                                throttleTimer = undefined;
+                                provider.updateState({ previewBody: renderMarkdown(accumulatedReview) });
+                            }, 100);
+                        },
+                    });
+                }
+            );
+            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             if (result.review) {
                 PreviewPanel.createOrShow(extensionUri,
                     { kind: 'prReview', body: result.review, timestamp: new Date().toLocaleString() },
                     workspaceFolder.uri.fsPath, config.outputDirectory
                 );
-                // Show preview in sidebar too
                 lastPreviewMarkdown = result.review;
                 provider.updateState({
                     viewMode: 'preview',
@@ -367,12 +416,16 @@ async function generatePrReview(): Promise<void> {
                     previewTitle: null,
                     previewBody: renderMarkdown(result.review),
                 });
-                // Reveal the sidebar so the user sees the preview
-                vscode.commands.executeCommand('workbench.view.extension.prForge');
             }
             return true;
         } catch (err: unknown) {
+            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             const msg = err instanceof Error ? err.message : String(err);
+            if (msg === 'Request cancelled') {
+                log('Generation cancelled.');
+                provider.updateState({ viewMode: 'tools' });
+                return false;
+            }
             log(`Error: ${msg}`);
             vscode.window.showErrorMessage(`PR Forge: ${msg}`);
             return false;
@@ -494,37 +547,68 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     const title = fs.readFileSync(titlePath, 'utf-8').trim();
     const body  = fs.readFileSync(bodyPath,  'utf-8');
 
-    const submitLabel = draft ? 'Submit Draft' : 'Submit';
-    const draftLabel = draft ? ' (Draft)' : '';
-    const confirm = await vscode.window.showInformationMessage(
-        `Submit${draftLabel} PR: "${title}"\n${remote.owner}/${remote.repo}  •  ${headBranch} → ${config.baseBranch}`,
-        { modal: true },
-        submitLabel
-    );
-    if (confirm !== submitLabel) return;
+    // Check for an existing open PR on this branch
+    let existingPr: { url: string; number: number } | null = null;
+    try {
+        existingPr = await findOpenPullRequest({ ...remote, head: headBranch, token: token! });
+    } catch { /* if lookup fails, fall through to create */ }
 
-    const progressTitle = draft ? 'PR Forge: Submitting draft PR...' : 'PR Forge: Submitting PR...';
-    const prType = draft ? 'Draft PR' : 'PR';
-
-    // withProgress closes as soon as this callback resolves — keep it to just the API call
-    // so the spinner doesn't hang waiting for the user to click "Open in Browser".
     let prUrl: string | undefined;
     let prNumber: number | undefined;
-    await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: progressTitle, cancellable: false },
-        async () => {
-            try {
-                const result = await createPullRequest({ ...remote, title, body, head: headBranch, base: config.baseBranch, token: token!, draft });
-                prUrl = result.url;
-                prNumber = result.number;
-                log(`${prType} created: ${result.url}`);
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                log(`PR submit failed: ${msg}`);
-                vscode.window.showErrorMessage(`PR Forge: PR submit failed — ${msg}`);
+
+    if (existingPr) {
+        const updateLabel = `Update PR #${existingPr.number}`;
+        const confirm = await vscode.window.showInformationMessage(
+            `PR #${existingPr.number} already exists for "${headBranch}". Update its title and description?`,
+            { modal: true },
+            updateLabel, 'Cancel'
+        );
+        if (confirm !== updateLabel) { return; }
+
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `PR Forge: Updating PR #${existingPr.number}...`, cancellable: false },
+            async () => {
+                try {
+                    const result = await updatePullRequest({ ...remote, number: existingPr!.number, title, body, token: token! });
+                    prUrl = result.url;
+                    prNumber = result.number;
+                    log(`PR #${prNumber} updated: ${prUrl}`);
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    log(`PR update failed: ${msg}`);
+                    vscode.window.showErrorMessage(`PR Forge: PR update failed — ${msg}`);
+                }
             }
-        }
-    );
+        );
+    } else {
+        const submitLabel = draft ? 'Submit Draft' : 'Submit';
+        const draftLabel = draft ? ' (Draft)' : '';
+        const confirm = await vscode.window.showInformationMessage(
+            `Submit${draftLabel} PR: "${title}"\n${remote.owner}/${remote.repo}  •  ${headBranch} → ${config.baseBranch}`,
+            { modal: true },
+            submitLabel
+        );
+        if (confirm !== submitLabel) { return; }
+
+        const progressTitle = draft ? 'PR Forge: Submitting draft PR...' : 'PR Forge: Submitting PR...';
+        const prType = draft ? 'Draft PR' : 'PR';
+
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: progressTitle, cancellable: false },
+            async () => {
+                try {
+                    const result = await createPullRequest({ ...remote, title, body, head: headBranch, base: config.baseBranch, token: token!, draft });
+                    prUrl = result.url;
+                    prNumber = result.number;
+                    log(`${prType} created: ${result.url}`);
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    log(`PR submit failed: ${msg}`);
+                    vscode.window.showErrorMessage(`PR Forge: PR submit failed — ${msg}`);
+                }
+            }
+        );
+    }
 
     // Show success after the spinner has closed
     if (prUrl && prNumber) {
@@ -534,7 +618,8 @@ async function submitPrInternal(draft: boolean): Promise<void> {
             submittedPrDraft: draft,
             submittedPrTimestamp: new Date().toLocaleTimeString(),
         });
-        const open = await vscode.window.showInformationMessage(`${prType} #${prNumber} created!`, 'Open in Browser');
+        const actionLabel = existingPr ? `PR #${prNumber} updated!` : `${draft ? 'Draft PR' : 'PR'} #${prNumber} created!`;
+        const open = await vscode.window.showInformationMessage(actionLabel, 'Open in Browser');
         if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(prUrl)); }
     }
 }
