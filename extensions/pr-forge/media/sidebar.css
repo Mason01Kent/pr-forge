@@ -130,72 +130,69 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border: 1px solid transparent;
-  border-radius: 2px;
+  gap: 6px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   cursor: pointer;
   width: 100%;
   text-align: center;
   line-height: 1.4;
-  transition: background 0.08s;
+  transition: background 0.08s, filter 0.08s;
   white-space: nowrap;
 }
 
 .btn:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
+  outline-offset: 1px;
 }
 
 .btn:disabled {
-  opacity: 0.4;
+  opacity: 0.38;
   cursor: not-allowed;
 }
 
-/* Primary — VS Code's standard button */
+/* Primary — VS Code standard button */
 .btn-primary {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
-  border-color: var(--vscode-button-border, transparent);
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--vscode-button-hoverBackground);
 }
 
-/* Secondary — VS Code's secondary button */
+/* Secondary — VS Code secondary button */
 .btn-secondary {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
-  border-color: var(--vscode-button-border, transparent);
 }
 .btn-secondary:hover:not(:disabled) {
   background: var(--vscode-button-secondaryHoverBackground);
 }
 
-/* Ghost — minimal, for tertiary/setup actions */
+/* Ghost — setup/config actions; same pill shape, secondary fill */
 .btn-ghost {
-  background: transparent;
-  color: var(--vscode-foreground);
-  border-color: var(--vscode-widget-border, rgba(127,127,127,0.35));
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  padding: 4px 8px;
   font-size: 11px;
-  padding: 3px 8px;
 }
 .btn-ghost:hover:not(:disabled) {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--vscode-button-secondaryHoverBackground);
 }
 
-/* Danger — destructive actions */
+/* Danger — destructive, muted until hover */
 .btn-danger {
   background: transparent;
   color: var(--vscode-errorForeground, #f48771);
-  border-color: rgba(244, 135, 113, 0.4);
   font-size: 11px;
+  opacity: 0.75;
 }
 .btn-danger:hover:not(:disabled) {
-  background: rgba(244, 135, 113, 0.08);
-  border-color: rgba(244, 135, 113, 0.6);
+  background: rgba(244, 135, 113, 0.1);
+  opacity: 1;
 }
 
 /* ── Horizontal button row ───────────────────── */
@@ -252,11 +249,11 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
-  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.35));
-  border-radius: 2px;
-  background: transparent;
-  color: var(--vscode-foreground);
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
   font-family: var(--vscode-font-family);
   font-size: 11px;
   cursor: pointer;
@@ -264,11 +261,11 @@ body {
   flex-shrink: 0;
 }
 .btn-back:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--vscode-button-secondaryHoverBackground);
 }
 .btn-back:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
+  outline-offset: 1px;
 }
 
 .preview-header-title {
@@ -292,9 +289,9 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 10px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 2px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
   font-family: var(--vscode-font-family);
@@ -307,7 +304,7 @@ body {
 }
 .btn-preview-action:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
+  outline-offset: 1px;
 }
 
 .btn-preview-submit {
@@ -443,15 +440,15 @@ body {
   background: var(--vscode-dropdown-background);
   color: var(--vscode-dropdown-foreground);
   border: 1px solid var(--vscode-dropdown-border, rgba(127,127,127,0.4));
-  border-radius: 2px;
-  padding: 2px 4px;
+  border-radius: 4px;
+  padding: 3px 6px;
   font-size: var(--vscode-font-size);
   font-family: var(--vscode-font-family);
   cursor: pointer;
 }
 .select-model:focus {
   outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
+  outline-offset: 1px;
 }
 
 /* ── Run tests toggle ────────────────────────── */
@@ -502,9 +499,9 @@ body {
   gap: 5px;
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 2px;
-  padding: 3px 10px;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
   font-size: var(--vscode-font-size);
   font-family: var(--vscode-font-family);
   cursor: pointer;
