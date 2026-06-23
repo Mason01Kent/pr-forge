@@ -386,6 +386,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     // doesn't unconditionally re-enable all buttons and override these.
     const onBaseBranch = _onBaseBranch;
     const canSubmit = state.prBodyReady && !onBaseBranch;
+    el('btn-pr-body').disabled         = onBaseBranch;
+    el('btn-pr-review').disabled       = onBaseBranch;
+    el('btn-pr-body').title            = onBaseBranch ? 'Switch to a feature branch first' : '';
+    el('btn-pr-review').title          = onBaseBranch ? 'Switch to a feature branch first' : '';
     el('btn-submit-pr').disabled      = !canSubmit;
     el('btn-submit-draft-pr').disabled = !canSubmit;
     el('btn-view-summary').disabled    = !state.prBodyReady;

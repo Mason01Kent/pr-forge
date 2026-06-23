@@ -103,8 +103,8 @@ async function buildDiffContext(
   onLog: (msg: string) => void
 ): Promise<string> {
   const batches = batchFileDiffs(fileDiffs);
-  if (batches.length === 1) {
-    return batches[0];
+  if (batches.length <= 1) {
+    return batches[0] ?? '';
   }
 
   onLog(`Diff too large for one pass — summarising ${batches.length} batches...`);

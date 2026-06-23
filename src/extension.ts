@@ -255,6 +255,12 @@ async function generatePrBody(): Promise<void> {
     const config = await ensureConfig(workspaceFolder);
     if (!config) return;
 
+    const currentBranch = getCurrentBranch(workspaceFolder.uri.fsPath);
+    if (currentBranch === config.baseBranch) {
+        vscode.window.showErrorMessage(`PR Forge: You are on ${config.baseBranch}. Switch to a feature branch before generating.`);
+        return;
+    }
+
     const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
     const providerInfo = PROVIDERS[config.provider];
     if (!providerInfo?.noAuth && !apiKey) {
@@ -314,6 +320,12 @@ async function generatePrReview(): Promise<void> {
     if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
     const config = await ensureConfig(workspaceFolder);
     if (!config) return;
+
+    const currentBranch = getCurrentBranch(workspaceFolder.uri.fsPath);
+    if (currentBranch === config.baseBranch) {
+        vscode.window.showErrorMessage(`PR Forge: You are on ${config.baseBranch}. Switch to a feature branch before generating.`);
+        return;
+    }
 
     const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
     const providerInfo = PROVIDERS[config.provider];
