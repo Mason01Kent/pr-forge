@@ -64,29 +64,48 @@ function runTestCommand(opts: PrGeneratorOptions): Promise<string> {
   });
 }
 
+function truncate(text: string, maxChars: number, label: string): string {
+  if (text.length <= maxChars) { return text; }
+  return text.slice(0, maxChars) + `\n\n[...${label} truncated — ${text.length} chars total, showing first ${maxChars}...]`;
+}
+
 export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorResult> {
   const cwd = opts.workspacePath;
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
   const commits = safeExec(`git log ${opts.baseBranch}..HEAD --oneline`, cwd);
   const diffStat = safeExec(`git diff --stat ${opts.baseBranch}..HEAD`, cwd);
   const files = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
-  let diff = safeExec(`git diff ${opts.baseBranch}..HEAD`, cwd);
-  if (diff.length > 80_000) {
-    diff = diff.slice(0, 80_000) + '\n\n[...diff truncated at 80KB...]';
+
+  // Fetch diff per-file so large files can be dropped individually
+  const changedFiles = files.split('\n').filter(Boolean).map(l => l.split('\t').pop() ?? '');
+  let diff = '';
+  const DIFF_BUDGET = 40_000;
+  for (const file of changedFiles) {
+    if (diff.length >= DIFF_BUDGET) {
+      diff += `\n\n[...remaining files omitted — diff budget (${DIFF_BUDGET} chars) reached...]`;
+      break;
+    }
+    const fileDiff = safeExec(`git diff ${opts.baseBranch}..HEAD -- "${file}"`, cwd);
+    if (diff.length + fileDiff.length > DIFF_BUDGET) {
+      diff += truncate(fileDiff, DIFF_BUDGET - diff.length, `diff for ${file}`);
+      break;
+    }
+    diff += fileDiff;
   }
 
   opts.onLog(`Branch: ${branch}`);
   opts.onLog(`Commits: ${commits.split('\n').length} commits`);
-  opts.onLog(`Files changed: ${files.split('\n').filter(Boolean).length}`);
+  opts.onLog(`Files changed: ${changedFiles.length} (diff: ${diff.length} chars)`);
 
-  // Load review rules
+  // Load review rules — cap each file so one giant README can't blow the budget
   let reviewRules = '';
   const ruleParts: string[] = [];
   for (const rulesFile of opts.reviewRulesFiles) {
     try {
       const fullPath = path.join(opts.workspacePath, rulesFile);
       if (fs.existsSync(fullPath)) {
-        ruleParts.push(`--- ${rulesFile} ---\n${fs.readFileSync(fullPath, 'utf-8')}`);
+        const content = truncate(fs.readFileSync(fullPath, 'utf-8'), 8_000, rulesFile);
+        ruleParts.push(`--- ${rulesFile} ---\n${content}`);
       }
     } catch {
       // skip files that can't be read
@@ -96,9 +115,10 @@ export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorR
     reviewRules = ruleParts.join('\n\n---\n\n');
   }
 
-  // Run tests
+  // Run tests — cap output so a verbose test suite doesn't consume the budget
   opts.onLog('Running tests...');
-  const testOutput = await runTestCommand(opts);
+  const rawTestOutput = await runTestCommand(opts);
+  const testOutput = truncate(rawTestOutput, 6_000, 'test output');
   opts.onLog('Tests completed.');
 
   const systemPrompt = `You are a senior software engineer writing a GitHub pull request for the ${opts.projectName} project.
