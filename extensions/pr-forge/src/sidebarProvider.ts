@@ -6,6 +6,9 @@ export interface SidebarState {
     configExists: boolean;
     provider: string | null;
     providerKeySet: boolean;
+    availableModels: string[];
+    currentModel: string | null;
+    runTestsOnGenerate: boolean;
     lastRunType: 'prBody' | 'prReview' | null;
     lastRunStatus: 'success' | 'error' | null;
     lastRunTimestamp: string | null;
@@ -37,7 +40,10 @@ type WebviewToExtMsg =
     | { command: 'copyPreviewTitle' }
     | { command: 'copyPreviewBody' }
     | { command: 'openPrUrl' }
-    | { command: 'clearPr' };
+    | { command: 'clearPr' }
+    | { command: 'setModel'; model: string }
+    | { command: 'setRunTests'; value: boolean }
+    | { command: 'regenerate'; instruction: string };
 
 type ExtToWebviewMsg =
     | { type: 'stateUpdate'; state: SidebarState }
@@ -59,6 +65,9 @@ export interface SidebarCallbacks {
     onCopyPreviewBody: () => void;
     onOpenPrUrl: () => void;
     onClearPr: () => void;
+    onSetModel: (model: string) => void;
+    onSetRunTests: (value: boolean) => void;
+    onRegenerate: (instruction: string) => Promise<void>;
 }
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -70,6 +79,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         configExists: false,
         provider: null,
         providerKeySet: false,
+        availableModels: [],
+        currentModel: null,
+        runTestsOnGenerate: true,
         lastRunType: null,
         lastRunStatus: null,
         lastRunTimestamp: null,
@@ -85,7 +97,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         submittedPrTimestamp: null,
         currentBranch: null,
         baseBranch: null,
-    };  
+    };
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -153,6 +165,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'clearPr':
                     this._callbacks.onClearPr();
                     break;
+                case 'setModel':
+                    this._callbacks.onSetModel(msg.model);
+                    break;
+                case 'setRunTests':
+                    this._callbacks.onSetRunTests(msg.value);
+                    break;
+                case 'regenerate':
+                    this._callbacks.onRegenerate(msg.instruction);
+                    break;
             }
         });
     }
@@ -188,7 +209,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this._extensionUri, 'media', 'sidebar.css')
         );
 
-        return /* html */`<!DOCTYPE html>
+        return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -225,6 +246,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="card-row">
       <span class="label">API Key</span>
       <span class="badge warn" id="key-badge">Not set</span>
+    </div>
+    <div class="card-row" id="model-row" style="display:none">
+      <span class="label">Model</span>
+      <select class="select-model" id="model-select"></select>
+    </div>
+    <div class="card-row" id="run-tests-row" style="display:none">
+      <span class="label">Run tests</span>
+      <label class="toggle">
+        <input type="checkbox" id="chk-run-tests" checked>
+        <span class="toggle-label" id="run-tests-label">On</span>
+      </label>
     </div>
     <div class="card-row" id="branch-row" style="display:none">
       <span class="label">Branch</span>
@@ -282,6 +314,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="gh-pr-title-bar-text" id="gh-pr-title-text"></div>
   </div>
   <div class="preview-content" id="preview-content"></div>
+  <!-- Regenerate-with-feedback (PR Body only) -->
+  <div class="regen-bar" id="regen-bar" style="display:none">
+    <input class="regen-input" id="regen-input" type="text" placeholder="Instruction — e.g. make the summary shorter…">
+    <button class="btn btn-regen" id="btn-regen">↺ Regenerate</button>
+  </div>
 </div>
 
 <script nonce="${nonce}">
@@ -291,10 +328,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   const toolsView = el('tools-view');
   const previewView = el('preview-view');
 
-  // Branch-aware state tracked across messages
   let _onBaseBranch = false;
 
-  // Tools view buttons
   const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-submit-pr','btn-submit-draft-pr','btn-clear-pr'].map(el);
   el('btn-set-key').addEventListener('click',          () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click',       () => vscode.postMessage({ command: 'initConfig' }));
@@ -307,12 +342,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-clear-pr').addEventListener('click',          () => vscode.postMessage({ command: 'clearPr' }));
 
-  // Preview view buttons
+  el('model-select').addEventListener('change', (e) => {
+    vscode.postMessage({ command: 'setModel', model: e.target.value });
+  });
+  el('chk-run-tests').addEventListener('change', (e) => {
+    el('run-tests-label').textContent = e.target.checked ? 'On' : 'Off';
+    vscode.postMessage({ command: 'setRunTests', value: e.target.checked });
+  });
+
   el('btn-back').addEventListener('click', () => vscode.postMessage({ command: 'showTools' }));
   el('btn-preview-copy-title').addEventListener('click', () => vscode.postMessage({ command: 'copyPreviewTitle' }));
   el('btn-preview-copy-body').addEventListener('click',  () => vscode.postMessage({ command: 'copyPreviewBody' }));
   el('btn-preview-submit').addEventListener('click',     () => vscode.postMessage({ command: 'submitPr' }));
   el('btn-preview-draft').addEventListener('click',      () => vscode.postMessage({ command: 'submitDraftPr' }));
+  el('btn-regen').addEventListener('click', () => {
+    const instruction = el('regen-input').value.trim();
+    if (!instruction) { return; }
+    el('regen-input').value = '';
+    vscode.postMessage({ command: 'regenerate', instruction });
+  });
+  el('regen-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { el('btn-regen').click(); }
+  });
 
   function switchView(mode) {
     if (mode === 'preview') {
@@ -326,24 +377,43 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   function applyState(state) {
-    // Switch view
     switchView(state.viewMode || 'tools');
 
-    // Tools view fields
     el('project-name').textContent = state.projectName || '—';
     const badge = el('config-badge');
     if (state.configExists) {
-      badge.textContent = 'Found ✓';
-      badge.className = 'badge ok';
+      badge.textContent = 'Found ✓'; badge.className = 'badge ok';
     } else {
-      badge.textContent = 'Not found';
-      badge.className = 'badge warn';
+      badge.textContent = 'Not found'; badge.className = 'badge warn';
     }
     el('provider-name').textContent = state.provider ? state.provider.charAt(0).toUpperCase() + state.provider.slice(1) : '—';
     const keyBadge = el('key-badge');
     const noAuth = state.provider === 'ollama';
     keyBadge.textContent = noAuth ? 'Not needed' : (state.providerKeySet ? 'Set ✓' : 'Not set');
     keyBadge.className   = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
+
+    // Model dropdown
+    if (state.availableModels && state.availableModels.length > 0) {
+      const sel = el('model-select');
+      const prev = sel.value;
+      sel.innerHTML = state.availableModels.map(m =>
+        '<option value="' + m + '"' + (m === state.currentModel ? ' selected' : '') + '>' + m + '</option>'
+      ).join('');
+      if (state.currentModel) { sel.value = state.currentModel; }
+      else if (prev) { sel.value = prev; }
+      el('model-row').style.display = '';
+    } else {
+      el('model-row').style.display = 'none';
+    }
+
+    // Run tests toggle
+    if (state.configExists) {
+      el('chk-run-tests').checked = state.runTestsOnGenerate !== false;
+      el('run-tests-label').textContent = state.runTestsOnGenerate !== false ? 'On' : 'Off';
+      el('run-tests-row').style.display = '';
+    } else {
+      el('run-tests-row').style.display = 'none';
+    }
 
     if (state.lastRunTimestamp) {
       const label = state.lastRunType === 'prBody' ? 'PR Body' : 'PR Review';
@@ -360,7 +430,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('submitted-pr-row').style.display = 'none';
     }
 
-    // Branch display
     _onBaseBranch = state.currentBranch !== null && state.currentBranch === state.baseBranch;
     if (state.currentBranch) {
       const branchEl = el('branch-name');
@@ -371,7 +440,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('branch-row').style.display = 'none';
     }
 
-    // Update generate button labels to Regenerate once content exists
     el('btn-pr-body-label').textContent   = state.prBodyReady ? '⇄ Regenerate PR Body' : '⇄ Generate PR Body';
     const reviewDone = state.lastRunStatus === 'success' && state.lastRunType === 'prReview';
     el('btn-pr-review-label').textContent = reviewDone ? '✦ Regenerate PR Review' : '✦ Generate PR Review';
@@ -382,30 +450,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       setRunning(false, '');
     }
 
-    // Apply content/branch-aware button states AFTER setRunning so it
-    // doesn't unconditionally re-enable all buttons and override these.
     const onBaseBranch = _onBaseBranch;
     const canSubmit = state.prBodyReady && !onBaseBranch;
     el('btn-pr-body').disabled         = onBaseBranch;
     el('btn-pr-review').disabled       = onBaseBranch;
     el('btn-pr-body').title            = onBaseBranch ? 'Switch to a feature branch first' : '';
     el('btn-pr-review').title          = onBaseBranch ? 'Switch to a feature branch first' : '';
-    el('btn-submit-pr').disabled      = !canSubmit;
+    el('btn-submit-pr').disabled       = !canSubmit;
     el('btn-submit-draft-pr').disabled = !canSubmit;
     el('btn-view-summary').disabled    = !state.prBodyReady;
-    el('btn-submit-pr').title      = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
-    el('btn-submit-draft-pr').title = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
-    el('btn-view-summary').title    = state.prBodyReady ? '' : 'Generate a PR Body first';
-    el('btn-clear-pr').style.display = state.prBodyReady ? '' : 'none';
+    el('btn-submit-pr').title          = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
+    el('btn-submit-draft-pr').title    = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
+    el('btn-view-summary').title       = state.prBodyReady ? '' : 'Generate a PR Body first';
+    el('btn-clear-pr').style.display   = state.prBodyReady ? '' : 'none';
 
-    // Preview view fields
     const isPrBody = state.previewKind === 'prBody';
-    el('preview-header-title').textContent = isPrBody ? 'PR Body' : 'PR Review';
-    el('btn-preview-copy-title').style.display = isPrBody ? '' : 'none';
-    el('btn-preview-submit').style.display = (isPrBody && state.prBodyReady) ? '' : 'none';
-    el('btn-preview-draft').style.display = (isPrBody && state.prBodyReady) ? '' : 'none';
+    el('preview-header-title').textContent      = isPrBody ? 'PR Body' : 'PR Review';
+    el('btn-preview-copy-title').style.display  = isPrBody ? '' : 'none';
+    el('btn-preview-submit').style.display      = (isPrBody && state.prBodyReady) ? '' : 'none';
+    el('btn-preview-draft').style.display       = (isPrBody && state.prBodyReady) ? '' : 'none';
+    el('regen-bar').style.display               = isPrBody ? '' : 'none';
 
-    // GitHub-style title bar
     const titleBar = el('gh-pr-title-bar');
     const titleText = el('gh-pr-title-text');
     if (isPrBody && state.previewTitle) {
@@ -416,15 +481,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       titleText.textContent = '';
     }
 
-    if (state.previewBody) {
+    if (state.previewBody !== null && state.previewBody !== undefined) {
       el('preview-content').innerHTML = state.previewBody;
-    } else {
-      el('preview-content').innerHTML = '';
     }
   }
 
   function setRunning(running, msg) {
     allBtns.forEach(b => { if (b) b.disabled = running; });
+    el('btn-regen').disabled = running;
     const area = el('status-area');
     if (running) {
       el('status-message').textContent = msg;
@@ -443,7 +507,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       case 'runStart':
         setRunning(true, msg.runType === 'prBody' ? 'Generating PR Body...' : 'Generating PR Review...');
         break;
-      case 'runEnd':
+      case 'runEnd': {
         setRunning(false, '');
         const label = msg.runType === 'prBody' ? 'PR Body' : 'PR Review';
         const icon  = msg.success ? '✓' : '✗';
@@ -454,15 +518,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           el('btn-submit-pr').disabled      = !canSubmit;
           el('btn-submit-draft-pr').disabled = !canSubmit;
           el('btn-view-summary').disabled    = false;
-          el('btn-submit-pr').title      = _onBaseBranch ? 'Switch to a feature branch first' : '';
-          el('btn-submit-draft-pr').title = _onBaseBranch ? 'Switch to a feature branch first' : '';
-          el('btn-view-summary').title    = '';
+          el('btn-submit-pr').title          = _onBaseBranch ? 'Switch to a feature branch first' : '';
+          el('btn-submit-draft-pr').title    = _onBaseBranch ? 'Switch to a feature branch first' : '';
+          el('btn-view-summary').title       = '';
           el('btn-pr-body-label').textContent = '⇄ Regenerate PR Body';
         }
         if (msg.runType === 'prReview' && msg.success) {
           el('btn-pr-review-label').textContent = '✦ Regenerate PR Review';
         }
         break;
+      }
     }
   });
 
