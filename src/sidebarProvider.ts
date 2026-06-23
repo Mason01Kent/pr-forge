@@ -474,9 +474,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('branch-row').style.display = 'none';
     }
 
-    el('btn-pr-body-label').textContent   = state.prBodyReady ? '⇄ Regenerate PR Body' : '⇄ Generate PR Body';
-    const reviewDone = state.lastRunStatus === 'success' && state.lastRunType === 'prReview';
-    el('btn-pr-review-label').textContent = reviewDone ? '✦ Regenerate PR Review' : '✦ Generate PR Review';
+    el('btn-pr-body-label').textContent   = state.prBodyReady   ? 'Regenerate PR Body'   : 'Generate PR Body';
+    el('btn-pr-review-label').textContent = state.prReviewReady ? 'Regenerate PR Review' : 'Generate PR Review';
 
     if (state.isRunning) {
       setRunning(true, state.lastRunType === 'prBody' ? 'Generating PR Body...' : 'Generating PR Review...');
@@ -552,16 +551,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         el('last-run-row').style.display = '';
         if (msg.runType === 'prBody' && msg.success) {
           const canSubmit = !_onBaseBranch;
-          el('btn-submit-pr').disabled      = !canSubmit;
-          el('btn-submit-draft-pr').disabled = !canSubmit;
-          el('btn-view-summary').disabled    = false;
-          el('btn-submit-pr').title          = _onBaseBranch ? 'Switch to a feature branch first' : '';
-          el('btn-submit-draft-pr').title    = _onBaseBranch ? 'Switch to a feature branch first' : '';
-          el('btn-view-summary').title       = 'Open the full PR Body panel';
-          el('btn-pr-body-label').textContent = '⇄ Regenerate PR Body';
+          el('btn-submit-pr').disabled       = !canSubmit;
+          el('btn-submit-draft-pr').disabled  = !canSubmit;
+          el('btn-view-summary').disabled     = false;
+          el('btn-submit-pr').title           = _onBaseBranch ? 'Switch to a feature branch first' : '';
+          el('btn-submit-draft-pr').title     = _onBaseBranch ? 'Switch to a feature branch first' : '';
+          el('btn-view-summary').title        = 'Open the full PR Body panel';
+          el('btn-pr-body-label').textContent = 'Regenerate PR Body';
         }
         if (msg.runType === 'prReview' && msg.success) {
-          el('btn-pr-review-label').textContent = '✦ Regenerate PR Review';
+          el('btn-pr-review-label').textContent = 'Regenerate PR Review';
+          el('btn-view-review').disabled         = false;
+          el('btn-view-review').title            = 'Open the full PR Review panel';
         }
         break;
       }
