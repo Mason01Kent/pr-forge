@@ -16,6 +16,23 @@ export interface PrResult {
     number: number;
 }
 
+export interface FindPrOptions {
+    owner: string;
+    repo: string;
+    /** head branch name without owner prefix */
+    head: string;
+    token: string;
+}
+
+export interface UpdatePrOptions {
+    owner: string;
+    repo: string;
+    number: number;
+    title: string;
+    body: string;
+    token: string;
+}
+
 /**
  * Parse a GitHub remote URL into owner/repo.
  * Handles both HTTPS (https://github.com/owner/repo.git) and
@@ -92,6 +109,104 @@ export function createPullRequest(payload: PrPayload): Promise<PrResult> {
             reject(new Error(`Failed to reach GitHub API: ${err.message}`));
         });
 
+        req.write(requestBody);
+        req.end();
+    });
+}
+
+/**
+ * Find an open PR whose head branch matches. Returns the PR number + URL, or null.
+ */
+export function findOpenPullRequest(options: FindPrOptions): Promise<PrResult | null> {
+    const { owner, repo, head, token } = options;
+    const query = `head=${encodeURIComponent(owner)}%3A${encodeURIComponent(head)}&state=open&per_page=1`;
+    const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?${query}`;
+
+    const reqOptions: https.RequestOptions = {
+        hostname: 'api.github.com',
+        path,
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'pr-forge-vscode',
+            'X-GitHub-Api-Version': '2022-11-28',
+        },
+    };
+
+    return new Promise<PrResult | null>((resolve, reject) => {
+        const req = https.request(reqOptions, (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => {
+                const raw = Buffer.concat(chunks).toString('utf-8');
+                let json: Array<{ html_url?: string; number?: number }>;
+                try {
+                    json = JSON.parse(raw);
+                } catch {
+                    reject(new Error(`GitHub API returned invalid JSON (status ${res.statusCode})`));
+                    return;
+                }
+                if (!Array.isArray(json) || json.length === 0) {
+                    resolve(null);
+                    return;
+                }
+                const pr = json[0];
+                if (pr.html_url && pr.number) {
+                    resolve({ url: pr.html_url, number: pr.number });
+                } else {
+                    resolve(null);
+                }
+            });
+        });
+        req.on('error', (err: Error) => reject(new Error(`Failed to reach GitHub API: ${err.message}`)));
+        req.end();
+    });
+}
+
+/**
+ * Update the title and body of an existing PR via PATCH.
+ */
+export function updatePullRequest(options: UpdatePrOptions): Promise<PrResult> {
+    const { owner, repo, number, title, body, token } = options;
+    const requestBody = JSON.stringify({ title, body });
+    const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`;
+
+    const reqOptions: https.RequestOptions = {
+        hostname: 'api.github.com',
+        path,
+        method: 'PATCH',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'pr-forge-vscode',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'Content-Length': Buffer.byteLength(requestBody).toString(),
+        },
+    };
+
+    return new Promise<PrResult>((resolve, reject) => {
+        const req = https.request(reqOptions, (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => {
+                const raw = Buffer.concat(chunks).toString('utf-8');
+                let json: { html_url?: string; number?: number; message?: string };
+                try {
+                    json = JSON.parse(raw);
+                } catch {
+                    reject(new Error(`GitHub API returned invalid JSON (status ${res.statusCode})`));
+                    return;
+                }
+                if (res.statusCode === 200 && json.html_url && json.number) {
+                    resolve({ url: json.html_url, number: json.number });
+                } else {
+                    reject(new Error(json.message || `GitHub API error ${res.statusCode}`));
+                }
+            });
+        });
+        req.on('error', (err: Error) => reject(new Error(`Failed to reach GitHub API: ${err.message}`)));
         req.write(requestBody);
         req.end();
     });
