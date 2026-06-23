@@ -16,6 +16,33 @@ export interface LLMMessage {
 /** Called with each incremental text delta as it streams in. */
 export type TokenCallback = (delta: string) => void;
 
+export interface UsageStats {
+  inputTokens: number;
+  outputTokens: number;
+  /** Estimated cost in USD, or undefined if the model has no price entry. */
+  estimatedCostUsd?: number;
+}
+
+/** Price per 1M tokens in USD — [input, output]. Updated to current public pricing. */
+const PRICE_PER_1M: Record<string, [number, number]> = {
+  'claude-sonnet-4-6':           [3.00,  15.00],
+  'claude-opus-4-8':             [15.00, 75.00],
+  'claude-haiku-4-5-20251001':   [0.80,   4.00],
+  'gpt-4o':                      [2.50,  10.00],
+  'gpt-4o-mini':                 [0.15,   0.60],
+  'gpt-4-turbo':                 [10.00, 30.00],
+  'deepseek-chat':               [0.27,   1.10],
+  'deepseek-reasoner':           [0.55,   2.19],
+  'llama-3.3-70b-versatile':     [0.59,   0.79],
+  'llama-3.1-8b-instant':        [0.05,   0.08],
+};
+
+function calcCost(model: string, inputTokens: number, outputTokens: number): number | undefined {
+  const price = PRICE_PER_1M[model];
+  if (!price) { return undefined; }
+  return (inputTokens * price[0] + outputTokens * price[1]) / 1_000_000;
+}
+
 export const PROVIDERS: Record<string, { displayName: string; baseUrl: string; noAuth: boolean }> = {
   deepseek:   { displayName: 'DeepSeek',   baseUrl: 'https://api.deepseek.com',         noAuth: false },
   openai:     { displayName: 'OpenAI',     baseUrl: 'https://api.openai.com',            noAuth: false },
@@ -274,14 +301,15 @@ export async function chatComplete(
 
 /**
  * Stream a chat completion, invoking `onToken` for each text delta.
- * Resolves once the stream completes; rejects with AbortError if cancelled.
+ * Resolves with UsageStats once the stream completes.
+ * Rejects with AbortError if cancelled.
  */
 export async function chatCompleteStream(
   options: LLMClientOptions,
   messages: LLMMessage[],
   onToken: TokenCallback,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<UsageStats> {
   const baseUrl = options.baseUrl || PROVIDERS[options.provider]?.baseUrl;
   if (!baseUrl) {
     throw new Error(`Unknown provider: ${options.provider}`);
@@ -299,7 +327,7 @@ async function streamOpenAICompatible(
   baseUrl: string,
   onToken: TokenCallback,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<UsageStats> {
   const url = `${baseUrl.replace(/\/$/, '')}/v1/chat/completions`;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.provider !== 'ollama') {
@@ -315,7 +343,11 @@ async function streamOpenAICompatible(
     temperature: 0.3,
     max_tokens: getModelLimits(options.model).maxOutputTokens,
     stream: true,
+    stream_options: { include_usage: true },
   });
+
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   const { statusCode, errorBody } = await streamRequest(url, 'POST', headers, body, (line) => {
     const trimmed = line.trim();
@@ -323,15 +355,23 @@ async function streamOpenAICompatible(
     const data = trimmed.slice(5).trim();
     if (data === '[DONE]' || data === '') { return; }
     try {
-      const json = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
+      const json = JSON.parse(data) as {
+        choices?: { delta?: { content?: string } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
       const delta = json.choices?.[0]?.delta?.content;
       if (delta) { onToken(delta); }
+      if (json.usage) {
+        inputTokens  = json.usage.prompt_tokens     ?? inputTokens;
+        outputTokens = json.usage.completion_tokens ?? outputTokens;
+      }
     } catch { /* skip malformed frame */ }
   }, signal);
 
   if (statusCode < 200 || statusCode >= 300) {
     throw extractApiError(statusCode, errorBody, 'API');
   }
+  return { inputTokens, outputTokens, estimatedCostUsd: calcCost(options.model, inputTokens, outputTokens) };
 }
 
 async function streamAnthropic(
@@ -339,7 +379,7 @@ async function streamAnthropic(
   messages: LLMMessage[],
   onToken: TokenCallback,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<UsageStats> {
   const url = 'https://api.anthropic.com/v1/messages';
   const headers: Record<string, string> = {
     'x-api-key': options.apiKey,
@@ -367,15 +407,29 @@ async function streamAnthropic(
 
   const body = JSON.stringify(bodyObj);
 
+  let inputTokens = 0;
+  let outputTokens = 0;
+
   const { statusCode, errorBody } = await streamRequest(url, 'POST', headers, body, (line) => {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data:')) { return; }
     const data = trimmed.slice(5).trim();
     if (data === '') { return; }
     try {
-      const json = JSON.parse(data) as { type?: string; delta?: { text?: string } };
+      const json = JSON.parse(data) as {
+        type?: string;
+        delta?: { text?: string };
+        usage?: { input_tokens?: number; output_tokens?: number };
+        message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+      };
       if (json.type === 'content_block_delta' && json.delta?.text) {
         onToken(json.delta.text);
+      }
+      // Anthropic emits usage in message_start and message_delta events
+      const u = json.usage ?? json.message?.usage;
+      if (u) {
+        if (u.input_tokens  !== undefined) { inputTokens  = u.input_tokens; }
+        if (u.output_tokens !== undefined) { outputTokens = u.output_tokens; }
       }
     } catch { /* skip malformed frame */ }
   }, signal);
@@ -383,4 +437,5 @@ async function streamAnthropic(
   if (statusCode < 200 || statusCode >= 300) {
     throw extractApiError(statusCode, errorBody, 'Anthropic API');
   }
+  return { inputTokens, outputTokens, estimatedCostUsd: calcCost(options.model, inputTokens, outputTokens) };
 }

@@ -24,7 +24,7 @@ export async function deleteApiKey(context: vscode.ExtensionContext, provider: s
 
 export async function promptSetApiKey(
   context: vscode.ExtensionContext,
-  preselectedProvider?: string
+  _preselectedProvider?: string
 ): Promise<string | undefined> {
   const providerEntries = Object.entries(PROVIDERS);
 

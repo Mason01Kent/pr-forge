@@ -3,12 +3,13 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import { SidebarProvider } from './sidebarProvider';
-import { PreviewPanel, PreviewContent } from './previewPanel';
+import { PreviewPanel } from './previewPanel';
 import { renderMarkdown } from './markdownRenderer';
 import { generatePr, regeneratePr, clearDiffCache } from './prGenerator';
-import { PROVIDERS, DEFAULT_MODELS, listModels } from './llmClient';
+import { PrForgeConfig, migrateConfig } from './config';
+import { PROVIDERS, DEFAULT_MODELS, listModels, UsageStats } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
-import { parseGitHubRemote, createPullRequest, findOpenPullRequest, updatePullRequest } from './githubClient';
+import { parseRemote } from './scm/index';
 
 const OUTPUT_CHANNEL_NAME = 'PR Forge';
 const CONFIG_FILE_NAME = '.pr-forge.json';
@@ -16,30 +17,6 @@ const CONFIG_FILE_NAME = '.pr-forge.json';
 let extensionUri: vscode.Uri;
 let extensionContext: vscode.ExtensionContext;
 
-interface PrForgeConfig {
-    schemaVersion: number;
-    projectName: string;
-    baseBranch: string;
-    projectType: string;
-    testCommand: string;
-    /** When false, tests are skipped during generation. Default true. */
-    runTestsOnGenerate: boolean;
-    outputDirectory: string;
-    provider: string;
-    defaultModel: string;
-    reviewRulesFiles: string[];
-    prRiskAreas: string[];
-    prBodySections: string[];
-}
-
-function migrateConfig(raw: Record<string, unknown>): PrForgeConfig {
-    // schemaVersion 1 → 2: add runTestsOnGenerate
-    if (!raw.schemaVersion || (raw.schemaVersion as number) < 2) {
-        raw.schemaVersion = 2;
-        if (raw.runTestsOnGenerate === undefined) { raw.runTestsOnGenerate = true; }
-    }
-    return raw as unknown as PrForgeConfig;
-}
 
 let outputChannel: vscode.OutputChannel;
 let statusBarTools: vscode.StatusBarItem;
@@ -50,6 +27,13 @@ let lastPreviewMarkdown = '';
 
 function log(msg: string): void {
     outputChannel.appendLine(`[${new Date().toLocaleTimeString()}] ${msg}`);
+}
+
+function logUsage(usage: UsageStats): void {
+    const cost = usage.estimatedCostUsd !== undefined
+        ? ` | est. cost $${usage.estimatedCostUsd.toFixed(4)}`
+        : '';
+    log(`Tokens: ${usage.inputTokens.toLocaleString()} in, ${usage.outputTokens.toLocaleString()} out${cost}`);
 }
 
 async function withStatusBarSpinner(
@@ -114,7 +98,7 @@ function writeConfig(workspaceFolder: vscode.WorkspaceFolder, config: PrForgeCon
 }
 
 async function ensureConfig(workspaceFolder: vscode.WorkspaceFolder): Promise<PrForgeConfig | null> {
-    let config = readConfig(workspaceFolder);
+    const config = readConfig(workspaceFolder);
     if (config) return config;
     const choice = await vscode.window.showWarningMessage(`No ${CONFIG_FILE_NAME} found. Initialize project config now?`, 'Yes', 'No');
     if (choice !== 'Yes') return null;
@@ -327,6 +311,7 @@ async function generatePrBody(): Promise<void> {
                 }
             );
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
+            logUsage(result.usage);
             PreviewPanel.createOrShow(extensionUri,
                 { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch },
                 workspaceFolder.uri.fsPath, config.outputDirectory
@@ -420,6 +405,7 @@ async function generatePrReview(): Promise<void> {
                 }
             );
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
+            logUsage(result.usage);
             if (result.review) {
                 PreviewPanel.createOrShow(extensionUri,
                     { kind: 'prReview', body: result.review, timestamp: new Date().toLocaleString() },
@@ -505,6 +491,7 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
                 }
             );
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
+            logUsage(result.usage);
             lastPreviewMarkdown = result.body;
             provider.updateState({
                 viewMode: 'preview',
@@ -592,9 +579,9 @@ async function submitPrInternal(draft: boolean): Promise<void> {
         vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?');
         return;
     }
-    const remote = parseGitHubRemote(remoteUrl);
+    const remote = parseRemote(remoteUrl, token!);
     if (!remote) {
-        vscode.window.showErrorMessage(`PR Forge: Remote does not look like a GitHub URL: ${remoteUrl}`);
+        vscode.window.showErrorMessage(`PR Forge: Remote URL not recognised as a supported SCM host: ${remoteUrl}`);
         return;
     }
 
@@ -642,10 +629,12 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     const title = fs.readFileSync(titlePath, 'utf-8').trim();
     const body  = fs.readFileSync(bodyPath,  'utf-8');
 
+    const { owner, repo, provider: scm } = remote;
+
     // Check for an existing open PR on this branch
     let existingPr: { url: string; number: number } | null = null;
     try {
-        existingPr = await findOpenPullRequest({ ...remote, head: headBranch, token: token! });
+        existingPr = await scm.findOpenPr({ owner, repo, head: headBranch, token: token! });
     } catch { /* if lookup fails, fall through to create */ }
 
     let prUrl: string | undefined;
@@ -664,7 +653,7 @@ async function submitPrInternal(draft: boolean): Promise<void> {
             { location: vscode.ProgressLocation.Notification, title: `PR Forge: Updating PR #${existingPr.number}...`, cancellable: false },
             async () => {
                 try {
-                    const result = await updatePullRequest({ ...remote, number: existingPr!.number, title, body, token: token! });
+                    const result = await scm.updatePr({ owner, repo, number: existingPr!.number, title, body, head: headBranch, base: config.baseBranch, token: token! });
                     prUrl = result.url;
                     prNumber = result.number;
                     log(`PR #${prNumber} updated: ${prUrl}`);
@@ -679,7 +668,7 @@ async function submitPrInternal(draft: boolean): Promise<void> {
         const submitLabel = draft ? 'Submit Draft' : 'Submit';
         const draftLabel = draft ? ' (Draft)' : '';
         const confirm = await vscode.window.showInformationMessage(
-            `Submit${draftLabel} PR: "${title}"\n${remote.owner}/${remote.repo}  •  ${headBranch} → ${config.baseBranch}`,
+            `Submit${draftLabel} PR: "${title}"\n${owner}/${repo}  •  ${headBranch} → ${config.baseBranch}`,
             { modal: true },
             submitLabel
         );
@@ -692,7 +681,7 @@ async function submitPrInternal(draft: boolean): Promise<void> {
             { location: vscode.ProgressLocation.Notification, title: progressTitle, cancellable: false },
             async () => {
                 try {
-                    const result = await createPullRequest({ ...remote, title, body, head: headBranch, base: config.baseBranch, token: token!, draft });
+                    const result = await scm.createPr({ owner, repo, title, body, head: headBranch, base: config.baseBranch, token: token!, draft });
                     prUrl = result.url;
                     prNumber = result.number;
                     log(`${prType} created: ${result.url}`);
