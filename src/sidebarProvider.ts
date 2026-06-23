@@ -14,6 +14,7 @@ export interface SidebarState {
     lastRunTimestamp: string | null;
     isRunning: boolean;
     prBodyReady: boolean;
+    prReviewReady: boolean;
     viewMode: 'tools' | 'preview';
     previewKind: 'prBody' | 'prReview' | null;
     previewTitle: string | null;
@@ -37,6 +38,7 @@ type WebviewToExtMsg =
     | { command: 'ready' }
     | { command: 'showTools' }
     | { command: 'showPreview' }
+    | { command: 'showReview' }
     | { command: 'copyPreviewTitle' }
     | { command: 'copyPreviewBody' }
     | { command: 'openPrUrl' }
@@ -61,6 +63,7 @@ export interface SidebarCallbacks {
     onSetApiKey: () => Promise<void>;
     onShowTools: () => void;
     onShowPreview: () => void;
+    onShowReview: () => void;
     onCopyPreviewTitle: (title: string) => void;
     onCopyPreviewBody: () => void;
     onOpenPrUrl: () => void;
@@ -87,6 +90,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         lastRunTimestamp: null,
         isRunning: false,
         prBodyReady: false,
+        prReviewReady: false,
         viewMode: 'tools',
         previewKind: null,
         previewTitle: null,
@@ -150,6 +154,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'showPreview':
                     this._callbacks.onShowPreview();
+                    break;
+                case 'showReview':
+                    this._callbacks.onShowReview();
                     break;
                 case 'copyPreviewTitle':
                     if (this._state.previewTitle) {
@@ -304,7 +311,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="section">
-    <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>View PR Body</span></button>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>View PR Body</span></button>
+      <button class="btn btn-secondary" id="btn-view-review" disabled>${ic.review}<span>View PR Review</span></button>
+    </div>
     <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
     <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
     <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Clear PR Draft</span></button>
@@ -350,7 +360,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   let _onBaseBranch = false;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-submit-pr','btn-submit-draft-pr','btn-clear-pr'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-view-review','btn-submit-pr','btn-submit-draft-pr','btn-clear-pr'].map(el);
   el('btn-set-key').addEventListener('click',          () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click',       () => vscode.postMessage({ command: 'initConfig' }));
   el('btn-open-config').addEventListener('click',       () => vscode.postMessage({ command: 'openConfig' }));
@@ -359,6 +369,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-submit-pr').addEventListener('click',         () => vscode.postMessage({ command: 'submitPr' }));
   el('btn-submit-draft-pr').addEventListener('click',   () => vscode.postMessage({ command: 'submitDraftPr' }));
   el('btn-view-summary').addEventListener('click',      () => vscode.postMessage({ command: 'showPreview' }));
+  el('btn-view-review').addEventListener('click',       () => vscode.postMessage({ command: 'showReview' }));
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-clear-pr').addEventListener('click',          () => vscode.postMessage({ command: 'clearPr' }));
 
@@ -479,9 +490,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-submit-pr').disabled       = !canSubmit;
     el('btn-submit-draft-pr').disabled = !canSubmit;
     el('btn-view-summary').disabled    = !state.prBodyReady;
+    el('btn-view-review').disabled     = !state.prReviewReady;
     el('btn-submit-pr').title          = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
     el('btn-submit-draft-pr').title    = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
     el('btn-view-summary').title       = state.prBodyReady ? 'Open the full PR Body panel' : 'Generate a PR Body first';
+    el('btn-view-review').title        = state.prReviewReady ? 'Open the full PR Review panel' : 'Generate a PR Review first';
     el('btn-clear-pr').style.display   = state.prBodyReady ? '' : 'none';
 
     const isPrBody = state.previewKind === 'prBody';

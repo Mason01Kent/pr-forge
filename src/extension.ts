@@ -24,9 +24,12 @@ let statusBarPrBody: vscode.StatusBarItem;
 let statusBarPrReview: vscode.StatusBarItem;
 let provider: SidebarProvider;
 let lastPreviewMarkdown = '';
-let lastPreviewContent: PreviewContent | undefined;
-let lastPreviewWorkspacePath = '';
-let lastPreviewOutputDir = '';
+let lastBodyContent: PreviewContent | undefined;
+let lastReviewContent: PreviewContent | undefined;
+let lastBodyWorkspacePath = '';
+let lastBodyOutputDir = '';
+let lastReviewWorkspacePath = '';
+let lastReviewOutputDir = '';
 
 function log(msg: string): void {
     outputChannel.appendLine(`[${new Date().toLocaleTimeString()}] ${msg}`);
@@ -137,8 +140,19 @@ async function restoreOutputState(workspaceFolder: vscode.WorkspaceFolder, confi
     const timestamp = mostRecent.toLocaleTimeString();
     const lastRunType: 'prBody' | 'prReview' = reviewExists && reviewTime >= bodyTime ? 'prReview' : 'prBody';
 
+    if (reviewExists) {
+        const reviewBody = fs.readFileSync(reviewPath, 'utf-8');
+        lastReviewContent = { kind: 'prReview', body: reviewBody, timestamp: mostRecent.toLocaleTimeString() };
+        lastReviewWorkspacePath = workspaceFolder.uri.fsPath;
+        lastReviewOutputDir = config.outputDirectory;
+    }
+    lastBodyContent = { kind: 'prBody', title, body, timestamp: bodyTime.toLocaleTimeString(), baseBranch: config.baseBranch };
+    lastBodyWorkspacePath = workspaceFolder.uri.fsPath;
+    lastBodyOutputDir = config.outputDirectory;
+
     provider.updateState({
         prBodyReady: true,
+        prReviewReady: reviewExists,
         lastRunType,
         lastRunStatus: 'success',
         lastRunTimestamp: timestamp,
@@ -163,9 +177,12 @@ async function clearPrOutput(): Promise<void> {
         }
     }
     lastPreviewMarkdown = '';
+    lastBodyContent = undefined;
+    lastReviewContent = undefined;
     clearDiffCache();
     provider.updateState({
         prBodyReady: false,
+        prReviewReady: false,
         lastRunType: null,
         lastRunStatus: null,
         lastRunTimestamp: null,
@@ -318,9 +335,9 @@ async function generatePrBody(): Promise<void> {
             logUsage(result.usage);
             telemetryEvent('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             const previewContent: PreviewContent = { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch };
-            lastPreviewContent = previewContent;
-            lastPreviewWorkspacePath = workspaceFolder.uri.fsPath;
-            lastPreviewOutputDir = config.outputDirectory;
+            lastBodyContent = previewContent;
+            lastBodyWorkspacePath = workspaceFolder.uri.fsPath;
+            lastBodyOutputDir = config.outputDirectory;
             PreviewPanel.createOrShow(extensionUri, previewContent, workspaceFolder.uri.fsPath, config.outputDirectory);
             lastPreviewMarkdown = result.body;
             provider.updateState({
@@ -420,11 +437,12 @@ async function generatePrReview(): Promise<void> {
             telemetryEvent('generate.prReview', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             if (result.review) {
                 const reviewContent: PreviewContent = { kind: 'prReview', body: result.review, timestamp: new Date().toLocaleString() };
-                lastPreviewContent = reviewContent;
-                lastPreviewWorkspacePath = workspaceFolder.uri.fsPath;
-                lastPreviewOutputDir = config.outputDirectory;
+                lastReviewContent = reviewContent;
+                lastReviewWorkspacePath = workspaceFolder.uri.fsPath;
+                lastReviewOutputDir = config.outputDirectory;
                 PreviewPanel.createOrShow(extensionUri, reviewContent, workspaceFolder.uri.fsPath, config.outputDirectory);
                 lastPreviewMarkdown = result.review;
+                provider.updateState({ prReviewReady: true });
                 provider.updateState({
                     viewMode: 'preview',
                     previewKind: 'prReview',
@@ -841,10 +859,15 @@ export function activate(context: vscode.ExtensionContext): void {
             provider.updateState({ viewMode: 'tools' });
         },
         onShowPreview: () => {
-            if (lastPreviewContent) {
-                PreviewPanel.createOrShow(extensionUri, lastPreviewContent, lastPreviewWorkspacePath, lastPreviewOutputDir);
+            if (lastBodyContent) {
+                PreviewPanel.createOrShow(extensionUri, lastBodyContent, lastBodyWorkspacePath, lastBodyOutputDir);
             } else {
                 provider.updateState({ viewMode: 'preview' });
+            }
+        },
+        onShowReview: () => {
+            if (lastReviewContent) {
+                PreviewPanel.createOrShow(extensionUri, lastReviewContent, lastReviewWorkspacePath, lastReviewOutputDir);
             }
         },
         onCopyPreviewTitle: (title: string) => {
