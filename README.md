@@ -25,11 +25,21 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 
 ## Install
 
-Search **"PR Forge"** in the VS Code Extensions panel, or install via CLI:
+**Option A — VS Code Marketplace** (search or CLI):
 
 ```
 ext install masonkent.pr-forge
 ```
+
+**Option B — directly from this repo** (no build required):
+
+Download [`extensions/pr-forge/pr-forge-0.4.0.vsix`](extensions/pr-forge/pr-forge-0.4.0.vsix), then install it:
+
+```
+code --install-extension pr-forge-0.4.0.vsix
+```
+
+Or via the Extensions panel: `⋯ menu → Install from VSIX…`
 
 ## Setup
 
