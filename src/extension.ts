@@ -515,8 +515,14 @@ async function refreshSidebarState(context: vscode.ExtensionContext): Promise<vo
     const branch = getCurrentBranch(wf.uri.fsPath);
     if (cfg) {
         const keySet = await hasApiKey(context, cfg.provider);
+        const onBase = branch !== null && branch === cfg.baseBranch;
         provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet, currentBranch: branch, baseBranch: cfg.baseBranch });
-        await restoreOutputState(wf, cfg);
+        if (onBase) {
+            // Base branch has no PR to show — reset any stale output state
+            provider.updateState({ prBodyReady: false, lastRunType: null, lastRunStatus: null, lastRunTimestamp: null, previewTitle: null, previewBody: null });
+        } else {
+            await restoreOutputState(wf, cfg);
+        }
     } else {
         provider.updateState({ configExists: false, projectName: wf.name, currentBranch: branch, baseBranch: null });
     }
