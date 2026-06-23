@@ -1,12 +1,12 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "projectName": "PR Forge",
   "baseBranch": "main",
   "projectType": "unknown",
   "testCommand": "",
   "outputDirectory": ".pr",
   "provider": "deepseek",
-  "defaultModel": "deepseek-chat",
+  "defaultModel": "deepseek-v4-flash",
   "reviewRulesFiles": [
     "README.md"
   ],
@@ -24,5 +24,6 @@
     "Tests / verification",
     "Review focus",
     "Risks / follow-ups"
-  ]
+  ],
+  "runTestsOnGenerate": true
 }

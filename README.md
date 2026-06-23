@@ -12,13 +12,13 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 
 ## Features
 
-- **Generate Pull Request Body** — AI-written title + description from your `base..HEAD` diff, commits, and test output.
-- **Generate Full Code Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation.
+- **Generate PR Body** — AI-written title + description from your `base..HEAD` diff, commits, and test output.
+- **Generate PR Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation.
 - **Live streaming preview** — tokens stream into the sidebar as the model writes; no waiting for the full response.
 - **Regenerate with feedback** — type an instruction in the preview footer and hit Enter to revise the draft without re-running tests.
 - **Model picker** — dropdown lists available models from your provider's live API; falls back to curated defaults if unreachable. Selection saved to config automatically.
 - **Large-context mode** — Claude, GPT-4o, and DeepSeek receive the full diff in one shot; chunked summarization only kicks in for smaller models.
-- **Submit pull request / Submit as draft** — creates or updates the pull request on GitHub via the REST API without leaving VS Code.
+- **Submit PR / Submit as Draft** — creates or updates the pull request on GitHub via the REST API without leaving VS Code.
 - **Cancellable generation** — hit Cancel on the progress notification at any point to abort mid-stream.
 - **Multi-provider** — DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, Ollama. API keys stored in VS Code SecretStorage, never in project files.
 - **Project type detection** — auto-detects .NET, Node, React, and Python to seed sensible defaults.
@@ -33,10 +33,10 @@ ext install masonkent.pr-forge
 
 **Option B — directly from this repo** (no build required):
 
-Download [`extensions/pr-forge/pr-forge-0.5.0.vsix`](extensions/pr-forge/pr-forge-0.5.0.vsix), then install it:
+Download [`extensions/pr-forge/pr-forge-0.6.0.vsix`](extensions/pr-forge/pr-forge-0.6.0.vsix), then install it:
 
 ```
-code --install-extension extensions/pr-forge/pr-forge-0.5.0.vsix
+code --install-extension extensions/pr-forge/pr-forge-0.6.0.vsix
 ```
 
 Or via the Extensions panel: `⋯ menu → Install from VSIX…`
@@ -44,15 +44,15 @@ Or via the Extensions panel: `⋯ menu → Install from VSIX…`
 ## Setup
 
 1. Click the **PR Forge icon** in the Activity Bar to open the sidebar.
-2. Click **🔑 Set API Key** — pick your provider and paste its key.
-3. Click **⚙ Init Config** (or run **PR Forge: Initialize Project Config** from the Command Palette) to create `.pr-forge.json` in your project root.
-4. Switch to a feature branch and click **⇄ Generate PR Body** or **✦ Generate PR Review**.
+2. Click **Set API Key** — pick your provider and paste its key.
+3. Click **Init Config** (or run **PR Forge: Initialize Project Config** from the Command Palette) to create `.pr-forge.json` in your project root.
+4. Switch to a feature branch and click **Generate PR Body** or **Generate PR Review**.
 
 > **Tip:** The sidebar model dropdown lets you switch models without editing any files. The Run Tests toggle skips the test step when you just want a quick regeneration.
 
 ## Project config
 
-Each project gets a `.pr-forge.json` in its root. The sidebar writes most fields for you, but you can edit it directly with **✎ Open Config**.
+Each project gets a `.pr-forge.json` in its root. The sidebar writes most fields for you, but you can edit it directly with **Open Config**.
 
 | Field | Description |
 |---|---|
@@ -70,7 +70,7 @@ Each project gets a `.pr-forge.json` in its root. The sidebar writes most fields
 |---|---|
 | `.pr/PR_TITLE.txt` | Suggested pull request title |
 | `.pr/PR_BODY.md` | Full pull request description |
-| `.pr/PR_REVIEW.md` | Full code review (only with **Generate Full Code Review**) |
+| `.pr/PR_REVIEW.md` | Full code review (only with **Generate PR Review**) |
 
 ## Submitting pull requests
 
