@@ -483,6 +483,19 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     );
 }
 
+async function refreshSidebarState(context: vscode.ExtensionContext): Promise<void> {
+    const wf = getWorkspaceFolderWithConfig();
+    if (!wf) return;
+    const cfg = readConfig(wf);
+    if (cfg) {
+        const keySet = await hasApiKey(context, cfg.provider);
+        provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet });
+        await restoreOutputState(wf, cfg);
+    } else {
+        provider.updateState({ configExists: false, projectName: wf.name });
+    }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
     extensionUri = context.extensionUri;
     extensionContext = context;
@@ -509,17 +522,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
     provider = new SidebarProvider(extensionUri, {
         onReady: async () => {
-            const wf = getWorkspaceFolderWithConfig();
-            if (wf) {
-                const cfg = readConfig(wf);
-                if (cfg) {
-                    const keySet = await hasApiKey(context, cfg.provider);
-                    provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet });
-                    await restoreOutputState(wf, cfg);
-                } else {
-                    provider.updateState({ configExists: false, projectName: wf.name });
-                }
-            }
+            await refreshSidebarState(context);
+            // Retry once after a short delay — workspace folders may not be
+            // fully resolved when the webview fires ready on first load.
+            setTimeout(() => refreshSidebarState(context), 1500);
         },
         onInitConfig: async () => {
             const wf = await resolveTargetProjectFolder();
@@ -558,6 +564,11 @@ export function activate(context: vscode.ExtensionContext): void {
         },
     });
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, provider));
+
+    // Refresh sidebar whenever the workspace changes (e.g. folder opened after extension loaded)
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeWorkspaceFolders(() => refreshSidebarState(context))
+    );
 
     context.subscriptions.push(vscode.commands.registerCommand('prForge.initializeProjectConfig', async () => {
         const wf = await resolveTargetProjectFolder();
