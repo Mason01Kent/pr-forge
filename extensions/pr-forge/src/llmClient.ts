@@ -155,9 +155,7 @@ export async function listModels(options: LLMClientOptions): Promise<string[]> {
   }
 
   // OpenAI-compatible providers (openai, deepseek, groq, openrouter)
-  if (staticList && options.provider !== 'openai') {
-    return staticList;
-  }
+  // Try live API first, fall back to static list on error or no results
   try {
     const baseUrl = options.baseUrl || PROVIDERS[options.provider]?.baseUrl || '';
     const url = `${baseUrl.replace(/\/$/, '')}/v1/models`;

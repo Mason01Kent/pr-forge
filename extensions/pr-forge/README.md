@@ -16,7 +16,7 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 - **Generate Full Code Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation.
 - **Live streaming preview** — tokens stream into the sidebar as the model writes; no waiting for the full response.
 - **Regenerate with feedback** — type an instruction in the preview footer and hit Enter to revise the draft without re-running tests.
-- **Model picker** — dropdown lists available models for your provider; selection is saved to config automatically.
+- **Model picker** — dropdown lists available models from your provider's live API; falls back to curated defaults if unreachable. Selection saved to config automatically.
 - **Large-context mode** — Claude, GPT-4o, and DeepSeek receive the full diff in one shot; chunked summarization only kicks in for smaller models.
 - **Submit pull request / Submit as draft** — creates or updates the pull request on GitHub via the REST API without leaving VS Code.
 - **Cancellable generation** — hit Cancel on the progress notification at any point to abort mid-stream.
@@ -33,10 +33,10 @@ ext install masonkent.pr-forge
 
 **Option B — directly from this repo** (no build required):
 
-Download [`extensions/pr-forge/pr-forge-0.4.1.vsix`](extensions/pr-forge/pr-forge-0.4.1.vsix), then install it:
+Download [`extensions/pr-forge/pr-forge-0.4.2.vsix`](extensions/pr-forge/pr-forge-0.4.2.vsix), then install it:
 
 ```
-code --install-extension pr-forge-0.4.1.vsix
+code --install-extension pr-forge-0.4.2.vsix
 ```
 
 Or via the Extensions panel: `⋯ menu → Install from VSIX…`
