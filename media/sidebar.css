@@ -5,7 +5,7 @@
 }
 
 body {
-  background: var(--vscode-button-background);
+  background: transparent;
   color: var(--vscode-foreground);
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);

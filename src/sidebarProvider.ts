@@ -285,6 +285,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   const toolsView = el('tools-view');
   const previewView = el('preview-view');
 
+  // Branch-aware state tracked across messages
+  let _onBaseBranch = false;
+
   // Tools view buttons
   const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-submit-pr','btn-submit-draft-pr'].map(el);
   el('btn-set-key').addEventListener('click',          () => vscode.postMessage({ command: 'setApiKey' }));
@@ -351,17 +354,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     // Branch display
+    _onBaseBranch = state.currentBranch !== null && state.currentBranch === state.baseBranch;
     if (state.currentBranch) {
-      const onBase = state.currentBranch === state.baseBranch;
       const branchEl = el('branch-name');
       branchEl.textContent = state.currentBranch;
-      branchEl.className = 'value' + (onBase ? ' branch-warn' : '');
+      branchEl.className = 'value' + (_onBaseBranch ? ' branch-warn' : '');
       el('branch-row').style.display = '';
     } else {
       el('branch-row').style.display = 'none';
     }
 
-    const onBaseBranch = state.currentBranch !== null && state.currentBranch === state.baseBranch;
+    const onBaseBranch = _onBaseBranch;
     const canSubmit = state.prBodyReady && !onBaseBranch;
     el('btn-submit-pr').disabled      = !canSubmit;
     el('btn-submit-draft-pr').disabled = !canSubmit;
@@ -433,12 +436,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         el('last-run-info').textContent = icon + ' ' + label + ' · ' + msg.timestamp;
         el('last-run-row').style.display = '';
         if (msg.runType === 'prBody' && msg.success) {
-          el('btn-submit-pr').disabled = false;
-          el('btn-submit-draft-pr').disabled = false;
-          el('btn-view-summary').disabled = false;
-          el('btn-submit-pr').title = '';
-          el('btn-submit-draft-pr').title = '';
-          el('btn-view-summary').title = '';
+          const canSubmit = !_onBaseBranch;
+          el('btn-submit-pr').disabled      = !canSubmit;
+          el('btn-submit-draft-pr').disabled = !canSubmit;
+          el('btn-view-summary').disabled    = false;
+          el('btn-submit-pr').title      = _onBaseBranch ? 'Switch to a feature branch first' : '';
+          el('btn-submit-draft-pr').title = _onBaseBranch ? 'Switch to a feature branch first' : '';
+          el('btn-view-summary').title    = '';
           el('btn-pr-body-label').textContent = '⇄ Regenerate PR Body';
         }
         if (msg.runType === 'prReview' && msg.success) {
