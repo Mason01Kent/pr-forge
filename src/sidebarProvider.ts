@@ -272,22 +272,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     </div>
   </div>
 
-  <div class="actions">
-    <button class="btn btn-secondary" id="btn-set-key">🔑 Set API Key</button>
-    <button class="btn btn-secondary" id="btn-init-config">⚙ Init Config</button>
-    <button class="btn btn-secondary" id="btn-open-config">✎ Open Config</button>
-    <hr class="divider">
+  <div class="section">
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="btn-set-key">Set API Key</button>
+      <button class="btn btn-ghost" id="btn-init-config">Init Config</button>
+      <button class="btn btn-ghost" id="btn-open-config">Open Config</button>
+    </div>
+  </div>
+
+  <div class="section">
     <button class="btn btn-primary" id="btn-pr-body">
-      <span id="btn-pr-body-label">⇄ Generate PR Body</span>
+      <span id="btn-pr-body-label">Generate PR Body</span>
     </button>
     <button class="btn btn-primary" id="btn-pr-review">
-      <span id="btn-pr-review-label">✦ Generate PR Review</span>
+      <span id="btn-pr-review-label">Generate PR Review</span>
     </button>
-    <hr class="divider">
-    <button class="btn btn-secondary" id="btn-view-summary" disabled>📄 View PR Preview</button>
-    <button class="btn btn-submit" id="btn-submit-pr" disabled>↑ Submit PR to GitHub</button>
-    <button class="btn btn-submit-draft" id="btn-submit-draft-pr" disabled>📝 Submit as Draft PR</button>
-    <button class="btn btn-clear" id="btn-clear-pr" style="display:none">🗑 Clear PR Draft</button>
+  </div>
+
+  <div class="section">
+    <button class="btn btn-secondary" id="btn-view-summary" disabled>View PR Preview</button>
+    <button class="btn btn-primary" id="btn-submit-pr" disabled>Submit PR to GitHub</button>
+    <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>Submit as Draft PR</button>
+    <button class="btn btn-danger" id="btn-clear-pr" style="display:none">Clear PR Draft</button>
   </div>
 
   <div class="status-area" id="status-area" style="display:none">
@@ -299,14 +305,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 <!-- ====== PREVIEW VIEW ====== -->
 <div id="preview-view" style="display:none">
   <div class="preview-header">
-    <button class="btn btn-back" id="btn-back">← Back</button>
+    <button class="btn-back" id="btn-back">← Back</button>
     <span class="preview-header-title" id="preview-header-title">PR Body</span>
   </div>
   <div class="preview-actions" id="preview-actions">
-    <button class="btn btn-preview-action" id="btn-preview-copy-title" style="display:none">📋 Copy Title</button>
-    <button class="btn btn-preview-action" id="btn-preview-copy-body">📋 Copy Body</button>
-    <button class="btn btn-preview-action btn-preview-draft" id="btn-preview-draft" style="display:none">📝 Submit Draft</button>
-    <button class="btn btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none">↑ Submit PR</button>
+    <button class="btn-preview-action" id="btn-preview-copy-title" style="display:none">Copy Title</button>
+    <button class="btn-preview-action" id="btn-preview-copy-body">Copy Body</button>
+    <button class="btn-preview-action btn-preview-draft" id="btn-preview-draft" style="display:none">Submit Draft</button>
+    <button class="btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none">Submit PR</button>
   </div>
   <!-- GitHub-style title shown for PR Body previews -->
   <div class="gh-pr-title-bar" id="gh-pr-title-bar" style="display:none">
@@ -317,7 +323,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <!-- Regenerate-with-feedback (PR Body only) -->
   <div class="regen-bar" id="regen-bar" style="display:none">
     <input class="regen-input" id="regen-input" type="text" placeholder="Instruction — e.g. make the summary shorter…">
-    <button class="btn btn-regen" id="btn-regen">↺ Regenerate</button>
+    <button class="btn-regen" id="btn-regen">Regenerate</button>
   </div>
 </div>
 
