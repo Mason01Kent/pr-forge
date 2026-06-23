@@ -1,5 +1,7 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const TelemetryReporter = require('@vscode/extension-telemetry').default;
+import TelemetryReporterModule from '@vscode/extension-telemetry';
+// The package exports the class as default; handle both CJS and ESM shapes
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const TelemetryReporter: any = (TelemetryReporterModule as any).default ?? TelemetryReporterModule;
 
 const CONNECTION_STRING = 'InstrumentationKey=906a3df3-667a-4b01-bddc-230d2becdb02;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=f9d8ca52-a27b-401d-bff3-9ad18a28c105';
 
