@@ -19,6 +19,8 @@ export interface SidebarState {
     submittedPrUrl: string | null;
     submittedPrDraft: boolean;
     submittedPrTimestamp: string | null;
+    currentBranch: string | null;
+    baseBranch: string | null;
 }
 
 type WebviewToExtMsg =
@@ -79,6 +81,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         submittedPrUrl: null,
         submittedPrDraft: false,
         submittedPrTimestamp: null,
+        currentBranch: null,
+        baseBranch: null,
     };  
 
     constructor(
@@ -217,6 +221,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       <span class="label">API Key</span>
       <span class="badge warn" id="key-badge">Not set</span>
     </div>
+    <div class="card-row" id="branch-row" style="display:none">
+      <span class="label">Branch</span>
+      <span class="value" id="branch-name"></span>
+    </div>
     <div class="card-row" id="last-run-row" style="display:none">
       <span class="label">Last run</span>
       <span class="value" id="last-run-info"></span>
@@ -342,11 +350,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('submitted-pr-row').style.display = 'none';
     }
 
-    el('btn-submit-pr').disabled      = !state.prBodyReady;
-    el('btn-submit-draft-pr').disabled = !state.prBodyReady;
+    // Branch display
+    if (state.currentBranch) {
+      const onBase = state.currentBranch === state.baseBranch;
+      const branchEl = el('branch-name');
+      branchEl.textContent = state.currentBranch;
+      branchEl.className = 'value' + (onBase ? ' branch-warn' : '');
+      el('branch-row').style.display = '';
+    } else {
+      el('branch-row').style.display = 'none';
+    }
+
+    const onBaseBranch = state.currentBranch !== null && state.currentBranch === state.baseBranch;
+    const canSubmit = state.prBodyReady && !onBaseBranch;
+    el('btn-submit-pr').disabled      = !canSubmit;
+    el('btn-submit-draft-pr').disabled = !canSubmit;
     el('btn-view-summary').disabled    = !state.prBodyReady;
-    el('btn-submit-pr').title      = state.prBodyReady ? '' : 'Generate a PR Body first';
-    el('btn-submit-draft-pr').title = state.prBodyReady ? '' : 'Generate a PR Body first';
+    el('btn-submit-pr').title      = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
+    el('btn-submit-draft-pr').title = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
     el('btn-view-summary').title    = state.prBodyReady ? '' : 'Generate a PR Body first';
 
     // Update generate button labels to Regenerate once content exists
