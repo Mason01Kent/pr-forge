@@ -2,9 +2,13 @@
   "name": "pr-forge",
   "displayName": "PR Forge",
   "description": "AI-powered PR description and review generator. Supports DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, and Ollama.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "masonkent",
   "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#5B3DE8",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Mason01Kent/pr-forge"
