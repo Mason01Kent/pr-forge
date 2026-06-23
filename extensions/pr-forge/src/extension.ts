@@ -745,7 +745,10 @@ async function refreshSidebarState(context: vscode.ExtensionContext): Promise<vo
     if (cfg) {
         const keySet = await hasApiKey(context, cfg.provider);
         const onBase = branch !== null && branch === cfg.baseBranch;
-        const immediateModels = STATIC_MODELS[cfg.provider] ?? [cfg.defaultModel].filter(Boolean);
+        const staticModels = STATIC_MODELS[cfg.provider] ?? [];
+        const immediateModels = staticModels.includes(cfg.defaultModel)
+            ? staticModels
+            : [cfg.defaultModel, ...staticModels].filter(Boolean);
         provider.updateState({
             configExists: true, projectName: cfg.projectName, provider: cfg.provider,
             providerKeySet: keySet, currentBranch: branch, baseBranch: cfg.baseBranch,
