@@ -228,6 +228,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             back: `<svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.5 8.00023H3.70701L7.85301 3.85423C8.04801 3.65923 8.04801 3.34223 7.85301 3.14723C7.65801 2.95223 7.34101 2.95223 7.14601 3.14723L2.14601 8.14723C1.95101 8.34223 1.95101 8.65923 2.14601 8.85423L7.14601 13.8542C7.24401 13.9522 7.37201 14.0002 7.50001 14.0002C7.62801 14.0002 7.75601 13.9512 7.85401 13.8542C8.04901 13.6592 8.04901 13.3422 7.85401 13.1472L3.70801 9.00123H13.501C13.777 9.00123 14.001 8.77723 14.001 8.50123C14.001 8.22523 13.777 8.00123 13.501 8.00123L13.5 8.00023Z"/></svg>`,
             sync: `<svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M7.14645 0.646447C7.34171 0.451184 7.65829 0.451184 7.85355 0.646447L9.35355 2.14645C9.54882 2.34171 9.54882 2.65829 9.35355 2.85355L7.85355 4.35355C7.65829 4.54882 7.34171 4.54882 7.14645 4.35355C6.95118 4.15829 6.95118 3.84171 7.14645 3.64645L7.7885 3.00439C5.12517 3.11522 3 5.30943 3 8C3 9.56799 3.72118 10.9672 4.85185 11.8847C5.06627 12.0587 5.09904 12.3736 4.92503 12.588C4.75103 12.8024 4.43615 12.8352 4.22172 12.6612C2.86712 11.5619 2 9.88205 2 8C2 4.75447 4.57689 2.1108 7.79629 2.00339L7.14645 1.35355C6.95118 1.15829 6.95118 0.841709 7.14645 0.646447ZM11.075 3.41199C11.249 3.19756 11.5639 3.1648 11.7783 3.3388C13.1329 4.43806 14 6.11795 14 8C14 11.2455 11.4231 13.8892 8.20371 13.9966L8.85355 14.6464C9.04882 14.8417 9.04882 15.1583 8.85355 15.3536C8.65829 15.5488 8.34171 15.5488 8.14645 15.3536L6.64645 13.8536C6.55268 13.7598 6.5 13.6326 6.5 13.5C6.5 13.3674 6.55268 13.2402 6.64645 13.1464L8.14645 11.6464C8.34171 11.4512 8.65829 11.4512 8.85355 11.6464C9.04882 11.8417 9.04882 12.1583 8.85355 12.3536L8.2115 12.9956C10.8748 12.8848 13 10.6906 13 8C13 6.43201 12.2788 5.03283 11.1482 4.1153C10.9337 3.94129 10.901 3.62641 11.075 3.41199Z"/></svg>`,
             copy: `<svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3 5V12.73C2.4 12.38 2 11.74 2 11V5C2 2.79 3.79 1 6 1H9C9.74 1 10.38 1.4 10.73 2H6C4.35 2 3 3.35 3 5ZM11 15H6C4.897 15 4 14.103 4 13V5C4 3.897 4.897 3 6 3H11C12.103 3 13 3.897 13 5V13C13 14.103 12.103 15 11 15ZM12 5C12 4.448 11.552 4 11 4H6C5.448 4 5 4.448 5 5V13C5 13.552 5.448 14 6 14H11C11.552 14 12 13.552 12 13V5Z"/></svg>`,
+            openExternal: `<svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M15 9.5V12.5C15 13.879 13.879 15 12.5 15H3.5C2.121 15 1 13.879 1 12.5V3.5C1 2.121 2.121 1 3.5 1H6.5C6.776 1 7 1.224 7 1.5C7 1.776 6.776 2 6.5 2H3.5C2.673 2 2 2.673 2 3.5V12.5C2 13.327 2.673 14 3.5 14H12.5C13.327 14 14 13.327 14 12.5V9.5C14 9.224 14.224 9 14.5 9C14.776 9 15 9.224 15 9.5ZM14.5 1H9.5C9.224 1 9 1.224 9 1.5C9 1.776 9.224 2 9.5 2H13.293L9.147 6.146C8.952 6.341 8.952 6.658 9.147 6.853C9.245 6.951 9.373 6.999 9.501 6.999C9.629 6.999 9.757 6.95 9.855 6.853L14.001 2.707V6.5C14.001 6.776 14.225 7 14.501 7C14.777 7 15.001 6.776 15.001 6.5V1.5C15.001 1.224 14.777 1 14.501 1H14.5Z"/></svg>`,
         };
 
         return /* html */ `<!DOCTYPE html>
@@ -317,6 +318,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     </div>
     <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
     <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
+    <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR on GitHub</span></button>
     <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Clear PR Draft</span></button>
   </div>
 
@@ -360,7 +362,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   let _onBaseBranch = false;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-view-review','btn-submit-pr','btn-submit-draft-pr','btn-clear-pr'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-view-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-clear-pr'].map(el);
   el('btn-set-key').addEventListener('click',          () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click',       () => vscode.postMessage({ command: 'initConfig' }));
   el('btn-open-config').addEventListener('click',       () => vscode.postMessage({ command: 'openConfig' }));
@@ -371,6 +373,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-view-summary').addEventListener('click',      () => vscode.postMessage({ command: 'showPreview' }));
   el('btn-view-review').addEventListener('click',       () => vscode.postMessage({ command: 'showReview' }));
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
+  el('btn-open-github').addEventListener('click',        () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-clear-pr').addEventListener('click',          () => vscode.postMessage({ command: 'clearPr' }));
 
   el('model-select').addEventListener('change', (e) => {
@@ -495,7 +498,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-submit-draft-pr').title    = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
     el('btn-view-summary').title       = state.prBodyReady ? 'Open the full PR Body panel' : 'Generate a PR Body first';
     el('btn-view-review').title        = state.prReviewReady ? 'Open the full PR Review panel' : 'Generate a PR Review first';
-    el('btn-clear-pr').style.display   = state.prBodyReady ? '' : 'none';
+    el('btn-clear-pr').style.display    = state.prBodyReady ? '' : 'none';
+    el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
 
     const isPrBody = state.previewKind === 'prBody';
     el('preview-header-title').textContent      = isPrBody ? 'PR Body' : 'PR Review';
