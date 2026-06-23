@@ -423,3 +423,81 @@ body {
 .branch-warn {
   color: var(--vscode-editorWarning-foreground, #cca700);
 }
+
+/* Model dropdown */
+.select-model {
+  flex: 1;
+  min-width: 0;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border, rgba(127,127,127,0.4));
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: var(--vscode-font-size);
+  font-family: var(--vscode-font-family);
+  cursor: pointer;
+}
+.select-model:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+/* Run tests toggle */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.toggle input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--vscode-button-background);
+}
+.toggle-label {
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Regenerate bar at bottom of preview */
+.regen-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.3));
+  background: var(--vscode-sideBar-background, transparent);
+  flex-shrink: 0;
+}
+.regen-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, rgba(127,127,127,0.4));
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: var(--vscode-font-size);
+  font-family: var(--vscode-font-family);
+}
+.regen-input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+.regen-input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+.btn-regen {
+  background: var(--vscode-button-secondaryBackground, rgba(127,127,127,0.2));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: var(--vscode-font-size);
+  font-family: var(--vscode-font-family);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-regen:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(127,127,127,0.3));
+}
+.btn-regen:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

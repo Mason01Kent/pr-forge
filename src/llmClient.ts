@@ -28,11 +28,146 @@ export const PROVIDERS: Record<string, { displayName: string; baseUrl: string; n
 export const DEFAULT_MODELS: Record<string, string> = {
   deepseek:   'deepseek-chat',
   openai:     'gpt-4o',
-  anthropic:  'claude-opus-4-8',
-  openrouter: 'anthropic/claude-opus-4-8',
+  anthropic:  'claude-sonnet-4-6',
+  openrouter: 'anthropic/claude-sonnet-4-6',
   groq:       'llama-3.3-70b-versatile',
   ollama:     'llama3.2',
 };
+
+/**
+ * Context window (chars, not tokens; 1 token ≈ 4 chars) and max output tokens
+ * per model family. Used to decide whether to pass the full diff or summarise.
+ * Conservative estimates — err on the side of fitting rather than over-filling.
+ */
+export interface ModelLimits {
+  /** Usable input budget in characters (context window minus output headroom). */
+  inputBudgetChars: number;
+  maxOutputTokens: number;
+}
+
+export const MODEL_LIMITS: Record<string, ModelLimits> = {
+  // Anthropic Claude — 200k token context
+  'claude-opus-4-8':        { inputBudgetChars: 600_000, maxOutputTokens: 8192 },
+  'claude-sonnet-4-6':      { inputBudgetChars: 600_000, maxOutputTokens: 8192 },
+  'claude-haiku-4-5-20251001': { inputBudgetChars: 600_000, maxOutputTokens: 8192 },
+  // OpenAI — 128k token context
+  'gpt-4o':                 { inputBudgetChars: 400_000, maxOutputTokens: 16384 },
+  'gpt-4o-mini':            { inputBudgetChars: 400_000, maxOutputTokens: 16384 },
+  'gpt-4-turbo':            { inputBudgetChars: 400_000, maxOutputTokens: 4096 },
+  // DeepSeek — 128k token context
+  'deepseek-chat':          { inputBudgetChars: 400_000, maxOutputTokens: 8192 },
+  'deepseek-reasoner':      { inputBudgetChars: 400_000, maxOutputTokens: 8192 },
+  // Groq — varies by model; use 32k as safe default
+  'llama-3.3-70b-versatile': { inputBudgetChars: 100_000, maxOutputTokens: 8192 },
+  'llama-3.1-8b-instant':   { inputBudgetChars: 100_000, maxOutputTokens: 8192 },
+  // Ollama — conservative default (model-dependent)
+  'llama3.2':               { inputBudgetChars: 100_000, maxOutputTokens: 4096 },
+  'llama3.1':               { inputBudgetChars: 100_000, maxOutputTokens: 4096 },
+  'mistral':                { inputBudgetChars: 100_000, maxOutputTokens: 4096 },
+};
+
+/** Default limits for unknown models. */
+const DEFAULT_LIMITS: ModelLimits = { inputBudgetChars: 80_000, maxOutputTokens: 4096 };
+
+export function getModelLimits(model: string): ModelLimits {
+  if (MODEL_LIMITS[model]) { return MODEL_LIMITS[model]; }
+  // Match by prefix (e.g. "claude-" → large context, "gpt-4" → large)
+  if (model.startsWith('claude-'))    { return { inputBudgetChars: 600_000, maxOutputTokens: 8192 }; }
+  if (model.startsWith('gpt-4'))      { return { inputBudgetChars: 400_000, maxOutputTokens: 8192 }; }
+  if (model.startsWith('gpt-3.5'))    { return { inputBudgetChars:  60_000, maxOutputTokens: 4096 }; }
+  if (model.startsWith('deepseek-'))  { return { inputBudgetChars: 400_000, maxOutputTokens: 8192 }; }
+  return DEFAULT_LIMITS;
+}
+
+/** Static curated model list for providers that don't have a /models endpoint. */
+export const STATIC_MODELS: Record<string, string[]> = {
+  anthropic: [
+    'claude-sonnet-4-6',
+    'claude-opus-4-8',
+    'claude-haiku-4-5-20251001',
+  ],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  groq: [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'gemma2-9b-it',
+    'mixtral-8x7b-32768',
+  ],
+  openrouter: [
+    'anthropic/claude-sonnet-4-6',
+    'anthropic/claude-opus-4-8',
+    'openai/gpt-4o',
+    'openai/gpt-4o-mini',
+    'deepseek/deepseek-chat',
+    'meta-llama/llama-3.3-70b-instruct',
+  ],
+};
+
+/**
+ * List available models for a provider.
+ * Returns a static curated list for providers without a /models endpoint.
+ * Falls back to the static list on any network error.
+ */
+export async function listModels(options: LLMClientOptions): Promise<string[]> {
+  const staticList = STATIC_MODELS[options.provider];
+
+  if (options.provider === 'anthropic') {
+    return staticList ?? [DEFAULT_MODELS.anthropic];
+  }
+
+  if (options.provider === 'ollama') {
+    try {
+      const baseUrl = options.baseUrl || PROVIDERS.ollama.baseUrl;
+      const res = await fetchJson(`${baseUrl}/api/tags`);
+      const models = (res as { models?: { name?: string }[] }).models;
+      if (Array.isArray(models) && models.length > 0) {
+        return models.map((m) => m.name ?? '').filter(Boolean);
+      }
+    } catch { /* fall through */ }
+    return [DEFAULT_MODELS.ollama];
+  }
+
+  // OpenAI-compatible providers (openai, deepseek, groq, openrouter)
+  if (staticList && options.provider !== 'openai') {
+    return staticList;
+  }
+  try {
+    const baseUrl = options.baseUrl || PROVIDERS[options.provider]?.baseUrl || '';
+    const url = `${baseUrl.replace(/\/$/, '')}/v1/models`;
+    const headers: Record<string, string> = { 'Authorization': `Bearer ${options.apiKey}` };
+    const res = await fetchJson(url, headers);
+    const data = (res as { data?: { id?: string }[] }).data;
+    if (Array.isArray(data) && data.length > 0) {
+      return data.map((m) => m.id ?? '').filter(Boolean).sort();
+    }
+  } catch { /* fall through */ }
+  return staticList ?? [DEFAULT_MODELS[options.provider] ?? ''];
+}
+
+function fetchJson(url: string, headers: Record<string, string> = {}): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const mod = parsedUrl.protocol === 'http:' ? http : https;
+    const opts = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: { 'Accept': 'application/json', ...headers },
+    };
+    const req = mod.request(opts, (res) => {
+      let buf = '';
+      res.setEncoding('utf-8');
+      res.on('data', (c: string) => { buf += c; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(buf)); }
+        catch { reject(new Error('Invalid JSON')); }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 /** Thrown when a request is cancelled via AbortSignal. */
 export class AbortError extends Error {
@@ -178,7 +313,7 @@ async function streamOpenAICompatible(
     model: options.model,
     messages,
     temperature: 0.3,
-    max_tokens: 4096,
+    max_tokens: getModelLimits(options.model).maxOutputTokens,
     stream: true,
   });
 
@@ -224,7 +359,7 @@ async function streamAnthropic(
 
   const bodyObj: Record<string, unknown> = {
     model: options.model,
-    max_tokens: 4096,
+    max_tokens: getModelLimits(options.model).maxOutputTokens,
     messages: apiMessages,
     stream: true,
   };

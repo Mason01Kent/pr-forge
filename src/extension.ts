@@ -5,8 +5,8 @@ import { execSync } from 'child_process';
 import { SidebarProvider } from './sidebarProvider';
 import { PreviewPanel, PreviewContent } from './previewPanel';
 import { renderMarkdown } from './markdownRenderer';
-import { generatePr } from './prGenerator';
-import { PROVIDERS, DEFAULT_MODELS } from './llmClient';
+import { generatePr, regeneratePr, clearDiffCache } from './prGenerator';
+import { PROVIDERS, DEFAULT_MODELS, listModels } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
 import { parseGitHubRemote, createPullRequest, findOpenPullRequest, updatePullRequest } from './githubClient';
 
@@ -22,12 +22,23 @@ interface PrForgeConfig {
     baseBranch: string;
     projectType: string;
     testCommand: string;
+    /** When false, tests are skipped during generation. Default true. */
+    runTestsOnGenerate: boolean;
     outputDirectory: string;
     provider: string;
     defaultModel: string;
     reviewRulesFiles: string[];
     prRiskAreas: string[];
     prBodySections: string[];
+}
+
+function migrateConfig(raw: Record<string, unknown>): PrForgeConfig {
+    // schemaVersion 1 → 2: add runTestsOnGenerate
+    if (!raw.schemaVersion || (raw.schemaVersion as number) < 2) {
+        raw.schemaVersion = 2;
+        if (raw.runTestsOnGenerate === undefined) { raw.runTestsOnGenerate = true; }
+    }
+    return raw as unknown as PrForgeConfig;
 }
 
 let outputChannel: vscode.OutputChannel;
@@ -90,7 +101,8 @@ function readConfig(workspaceFolder: vscode.WorkspaceFolder): PrForgeConfig | nu
     const configPath = getConfigPath(workspaceFolder);
     if (!fs.existsSync(configPath)) return null;
     try {
-        return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as PrForgeConfig;
+        const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+        return migrateConfig(raw);
     } catch (e) {
         log(`Error reading config: ${e}`);
         return null;
@@ -164,6 +176,7 @@ async function clearPrOutput(): Promise<void> {
         }
     }
     lastPreviewMarkdown = '';
+    clearDiffCache();
     provider.updateState({
         prBodyReady: false,
         lastRunType: null,
@@ -225,8 +238,9 @@ async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder):
         ? ['authentication', 'authorization', 'ownership isolation', 'PostgreSQL migrations', 'decimal money handling', 'inventory transactions', 'refunds', 'production readiness', 'config/secrets safety']
         : ['security', 'tests', 'configuration', 'data integrity', 'deployment risk'];
     const config: PrForgeConfig = {
-        schemaVersion: 1, projectName, baseBranch: 'main', projectType,
-        testCommand: testCommands[projectType] || '', outputDirectory: '.pr',
+        schemaVersion: 2, projectName, baseBranch: 'main', projectType,
+        testCommand: testCommands[projectType] || '', runTestsOnGenerate: true,
+        outputDirectory: '.pr',
         provider: 'deepseek', defaultModel: 'deepseek-chat',
         reviewRulesFiles, prRiskAreas,
         prBodySections: ['Summary', 'Why this matters', 'Changes', 'Tests / verification', 'Review focus', 'Risks / follow-ups']
@@ -296,6 +310,7 @@ async function generatePrBody(): Promise<void> {
                         prBodySections: config.prBodySections,
                         reviewRulesFiles: config.reviewRulesFiles,
                         testCommand: config.testCommand,
+                        runTests: config.runTestsOnGenerate ?? true,
                         generateReview: false,
                         llm: { provider: config.provider, apiKey, model: config.defaultModel },
                         onLog: (msg) => log(msg),
@@ -388,6 +403,7 @@ async function generatePrReview(): Promise<void> {
                         prBodySections: config.prBodySections,
                         reviewRulesFiles: config.reviewRulesFiles,
                         testCommand: config.testCommand,
+                        runTests: config.runTestsOnGenerate ?? true,
                         generateReview: true,
                         llm: { provider: config.provider, apiKey, model: config.defaultModel },
                         onLog: (msg) => log(msg),
@@ -433,6 +449,85 @@ async function generatePrReview(): Promise<void> {
     });
     provider.notifyRunEnd('prReview', success);
     provider.updateState({ configExists: true, projectName: config.projectName, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
+}
+
+async function regeneratePrBodyWithInstruction(instruction: string): Promise<void> {
+    const workspaceFolder = getWorkspaceFolderWithConfig();
+    if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+    const config = readConfig(workspaceFolder);
+    if (!config) { vscode.window.showErrorMessage('PR Forge: No config found.'); return; }
+
+    const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
+    const providerInfo = PROVIDERS[config.provider];
+    if (!providerInfo?.noAuth && !apiKey) { return; }
+
+    const outputDir = path.join(workspaceFolder.uri.fsPath, config.outputDirectory);
+    const bodyPath  = path.join(outputDir, 'PR_BODY.md');
+    const previousDraft = fs.existsSync(bodyPath) ? fs.readFileSync(bodyPath, 'utf-8') : '';
+
+    outputChannel.show(true);
+    provider.notifyRunStart('prBody');
+    provider.updateState({ viewMode: 'preview', previewKind: 'prBody', previewBody: '' });
+
+    const abortController = new AbortController();
+    let throttleTimer: ReturnType<typeof setTimeout> | undefined;
+    let accumulatedBody = '';
+
+    const success = await withStatusBarSpinner(statusBarPrBody, '$(git-pull-request) PR Body', async () => {
+        try {
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Regenerating PR Body...', cancellable: true },
+                async (_progress, token) => {
+                    token.onCancellationRequested(() => abortController.abort());
+                    return regeneratePr({
+                        workspacePath: workspaceFolder.uri.fsPath,
+                        baseBranch: config.baseBranch,
+                        outputDirectory: config.outputDirectory,
+                        projectName: config.projectName,
+                        prRiskAreas: config.prRiskAreas,
+                        prBodySections: config.prBodySections,
+                        reviewRulesFiles: config.reviewRulesFiles,
+                        testCommand: config.testCommand,
+                        runTests: false,
+                        generateReview: false,
+                        llm: { provider: config.provider, apiKey, model: config.defaultModel },
+                        onLog: (msg) => log(msg),
+                        signal: abortController.signal,
+                        onToken: (delta) => {
+                            accumulatedBody += delta;
+                            if (throttleTimer) { return; }
+                            throttleTimer = setTimeout(() => {
+                                throttleTimer = undefined;
+                                provider.updateState({ previewBody: renderMarkdown(accumulatedBody) });
+                            }, 100);
+                        },
+                    }, previousDraft, instruction);
+                }
+            );
+            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
+            lastPreviewMarkdown = result.body;
+            provider.updateState({
+                viewMode: 'preview',
+                previewKind: 'prBody',
+                previewTitle: result.title,
+                previewBody: renderMarkdown(result.body),
+                prBodyReady: true,
+            });
+            return true;
+        } catch (err: unknown) {
+            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg === 'Request cancelled') {
+                log('Regeneration cancelled.');
+                provider.updateState({ viewMode: 'preview' });
+                return false;
+            }
+            log(`Error: ${msg}`);
+            vscode.window.showErrorMessage(`PR Forge: ${msg}`);
+            return false;
+        }
+    });
+    provider.notifyRunEnd('prBody', success);
 }
 
 async function setApiKey(): Promise<void> {
@@ -640,15 +735,23 @@ async function refreshSidebarState(context: vscode.ExtensionContext): Promise<vo
     if (cfg) {
         const keySet = await hasApiKey(context, cfg.provider);
         const onBase = branch !== null && branch === cfg.baseBranch;
-        provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet, currentBranch: branch, baseBranch: cfg.baseBranch });
+        provider.updateState({
+            configExists: true, projectName: cfg.projectName, provider: cfg.provider,
+            providerKeySet: keySet, currentBranch: branch, baseBranch: cfg.baseBranch,
+            currentModel: cfg.defaultModel, runTestsOnGenerate: cfg.runTestsOnGenerate ?? true,
+        });
+        // Fetch available models in the background — don't block the refresh
+        const apiKey = (await getApiKey(context, cfg.provider)) ?? '';
+        listModels({ provider: cfg.provider, apiKey, model: cfg.defaultModel })
+            .then(models => provider.updateState({ availableModels: models, currentModel: cfg.defaultModel }))
+            .catch(() => { /* non-fatal */ });
         if (onBase) {
-            // Base branch has no PR to show — reset any stale output state
             provider.updateState({ prBodyReady: false, lastRunType: null, lastRunStatus: null, lastRunTimestamp: null, previewTitle: null, previewBody: null });
         } else {
             await restoreOutputState(wf, cfg);
         }
     } else {
-        provider.updateState({ configExists: false, projectName: wf.name, currentBranch: branch, baseBranch: null });
+        provider.updateState({ configExists: false, projectName: wf.name, currentBranch: branch, baseBranch: null, availableModels: [] });
     }
 }
 
@@ -723,6 +826,27 @@ export function activate(context: vscode.ExtensionContext): void {
             if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
         },
         onClearPr: clearPrOutput,
+        onSetModel: (model: string) => {
+            const wf = getWorkspaceFolderWithConfig();
+            if (!wf) { return; }
+            const cfg = readConfig(wf);
+            if (!cfg) { return; }
+            cfg.defaultModel = model;
+            writeConfig(wf, cfg);
+            provider.updateState({ currentModel: model });
+            log(`Model changed to ${model}`);
+        },
+        onSetRunTests: (value: boolean) => {
+            const wf = getWorkspaceFolderWithConfig();
+            if (!wf) { return; }
+            const cfg = readConfig(wf);
+            if (!cfg) { return; }
+            cfg.runTestsOnGenerate = value;
+            writeConfig(wf, cfg);
+            provider.updateState({ runTestsOnGenerate: value });
+            log(`runTestsOnGenerate set to ${value}`);
+        },
+        onRegenerate: regeneratePrBodyWithInstruction,
     });
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, provider));
 
