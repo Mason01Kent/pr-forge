@@ -7,7 +7,7 @@ import { PreviewPanel } from './previewPanel';
 import { renderMarkdown } from './markdownRenderer';
 import { generatePr, regeneratePr, clearDiffCache } from './prGenerator';
 import { PrForgeConfig, migrateConfig } from './config';
-import { PROVIDERS, DEFAULT_MODELS, listModels, UsageStats } from './llmClient';
+import { PROVIDERS, DEFAULT_MODELS, STATIC_MODELS, listModels, UsageStats } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
 import { parseRemote } from './scm/index';
 import { initTelemetry, disposeTelemetry, telemetryEvent, telemetryError, classifyError } from './telemetry';
@@ -745,12 +745,14 @@ async function refreshSidebarState(context: vscode.ExtensionContext): Promise<vo
     if (cfg) {
         const keySet = await hasApiKey(context, cfg.provider);
         const onBase = branch !== null && branch === cfg.baseBranch;
+        const immediateModels = STATIC_MODELS[cfg.provider] ?? [cfg.defaultModel].filter(Boolean);
         provider.updateState({
             configExists: true, projectName: cfg.projectName, provider: cfg.provider,
             providerKeySet: keySet, currentBranch: branch, baseBranch: cfg.baseBranch,
             currentModel: cfg.defaultModel, runTestsOnGenerate: cfg.runTestsOnGenerate ?? true,
+            availableModels: immediateModels,
         });
-        // Fetch available models in the background — don't block the refresh
+        // Fetch live models in the background and update the dropdown when ready
         const apiKey = (await getApiKey(context, cfg.provider)) ?? '';
         listModels({ provider: cfg.provider, apiKey, model: cfg.defaultModel })
             .then(models => provider.updateState({ availableModels: models, currentModel: cfg.defaultModel }))
