@@ -321,6 +321,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-submit-draft-pr').title = state.prBodyReady ? '' : 'Generate a PR Body first';
     el('btn-view-summary').title    = state.prBodyReady ? '' : 'Generate a PR Body first';
 
+    // Update generate button labels to Regenerate once content exists
+    el('btn-pr-body-label').textContent   = state.prBodyReady ? '⇄ Regenerate PR Body' : '⇄ Generate PR Body';
+    const reviewDone = state.lastRunStatus === 'success' && state.lastRunType === 'prReview';
+    el('btn-pr-review-label').textContent = reviewDone ? '✦ Regenerate PR Review' : '✦ Generate PR Review';
+
     if (state.isRunning) {
       setRunning(true, state.lastRunType === 'prBody' ? 'Generating PR Body...' : 'Generating PR Review...');
     } else {
@@ -385,6 +390,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           el('btn-submit-pr').title = '';
           el('btn-submit-draft-pr').title = '';
           el('btn-view-summary').title = '';
+          el('btn-pr-body-label').textContent = '⇄ Regenerate PR Body';
+        }
+        if (msg.runType === 'prReview' && msg.success) {
+          el('btn-pr-review-label').textContent = '✦ Regenerate PR Review';
         }
         break;
     }
