@@ -465,15 +465,20 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     if (confirm !== submitLabel) return;
 
     const progressTitle = draft ? 'PR Forge: Submitting draft PR...' : 'PR Forge: Submitting PR...';
+    const prType = draft ? 'Draft PR' : 'PR';
+
+    // withProgress closes as soon as this callback resolves — keep it to just the API call
+    // so the spinner doesn't hang waiting for the user to click "Open in Browser".
+    let prUrl: string | undefined;
+    let prNumber: number | undefined;
     await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: progressTitle, cancellable: false },
         async () => {
             try {
                 const result = await createPullRequest({ ...remote, title, body, head: headBranch, base: config.baseBranch, token: token!, draft });
-                const prType = draft ? 'Draft PR' : 'PR';
+                prUrl = result.url;
+                prNumber = result.number;
                 log(`${prType} created: ${result.url}`);
-                const open = await vscode.window.showInformationMessage(`${prType} #${result.number} created!`, 'Open in Browser');
-                if (open === 'Open in Browser') vscode.env.openExternal(vscode.Uri.parse(result.url));
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 log(`PR submit failed: ${msg}`);
@@ -481,6 +486,12 @@ async function submitPrInternal(draft: boolean): Promise<void> {
             }
         }
     );
+
+    // Show success after the spinner has closed
+    if (prUrl && prNumber) {
+        const open = await vscode.window.showInformationMessage(`${prType} #${prNumber} created!`, 'Open in Browser');
+        if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(prUrl)); }
+    }
 }
 
 async function refreshSidebarState(context: vscode.ExtensionContext): Promise<void> {
