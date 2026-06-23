@@ -4,21 +4,21 @@
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/masonkent.pr-forge)](https://marketplace.visualstudio.com/items?itemName=masonkent.pr-forge)
 [![License](https://img.shields.io/github/license/Mason01Kent/pr-forge)](https://github.com/Mason01Kent/pr-forge/blob/master/LICENSE)
 
-AI-powered PR description and review generator for VS Code.
+AI-powered pull request description and code review generator for VS Code.
 
-PR Forge turns your branch diff into a polished PR title, description, and full code review — then submits the PR to GitHub, all from a sidebar panel or the status bar.
+PR Forge turns your branch diff into a polished pull request title, description, and full code review — then submits the pull request to GitHub, all from a sidebar panel or the status bar.
 
 Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and **Ollama** (local).
 
 ## Features
 
-- **Generate PR Body** — AI-written title + description from your `base..HEAD` diff, commits, and test output.
-- **Generate Full PR Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation.
+- **Generate Pull Request Body** — AI-written title + description from your `base..HEAD` diff, commits, and test output.
+- **Generate Full Code Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation.
 - **Live streaming preview** — tokens stream into the sidebar as the model writes; no waiting for the full response.
 - **Regenerate with feedback** — type an instruction in the preview footer and hit Enter to revise the draft without re-running tests.
 - **Model picker** — dropdown lists available models for your provider; selection is saved to config automatically.
 - **Large-context mode** — Claude, GPT-4o, and DeepSeek receive the full diff in one shot; chunked summarization only kicks in for smaller models.
-- **Submit PR / Submit Draft PR** — creates or updates the PR on GitHub via the REST API without leaving VS Code.
+- **Submit pull request / Submit as draft** — creates or updates the pull request on GitHub via the REST API without leaving VS Code.
 - **Cancellable generation** — hit Cancel on the progress notification at any point to abort mid-stream.
 - **Multi-provider** — DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, Ollama. API keys stored in VS Code SecretStorage, never in project files.
 - **Project type detection** — auto-detects .NET, Node, React, and Python to seed sensible defaults.
