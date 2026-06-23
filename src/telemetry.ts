@@ -1,7 +1,4 @@
-import TelemetryReporterModule from '@vscode/extension-telemetry';
-// The package exports the class as default; handle both CJS and ESM shapes
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TelemetryReporter: any = (TelemetryReporterModule as any).default ?? TelemetryReporterModule;
+import { TelemetryReporter } from '@vscode/extension-telemetry';
 
 const CONNECTION_STRING = 'InstrumentationKey=906a3df3-667a-4b01-bddc-230d2becdb02;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=f9d8ca52-a27b-401d-bff3-9ad18a28c105';
 
@@ -9,7 +6,11 @@ const CONNECTION_STRING = 'InstrumentationKey=906a3df3-667a-4b01-bddc-230d2becdb
 let reporter: any | undefined;
 
 export function initTelemetry(_extensionVersion: string): void {
-    reporter = new TelemetryReporter(CONNECTION_STRING);
+    try {
+        reporter = new TelemetryReporter(CONNECTION_STRING);
+    } catch {
+        // Telemetry is non-critical — never let it crash the extension
+    }
 }
 
 export function disposeTelemetry(): void {
@@ -22,7 +23,7 @@ export function telemetryEvent(
     properties?: Record<string, string>,
     measurements?: Record<string, number>
 ): void {
-    reporter?.sendTelemetryEvent(name, properties, measurements);
+    try { reporter?.sendTelemetryEvent(name, properties, measurements); } catch { /* non-critical */ }
 }
 
 export function telemetryError(
@@ -30,7 +31,7 @@ export function telemetryError(
     properties?: Record<string, string>,
     measurements?: Record<string, number>
 ): void {
-    reporter?.sendTelemetryErrorEvent(name, properties, measurements);
+    try { reporter?.sendTelemetryErrorEvent(name, properties, measurements); } catch { /* non-critical */ }
 }
 
 /** Classify an error without leaking message content (paths, repo names, etc.) */
