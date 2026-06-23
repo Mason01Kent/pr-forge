@@ -319,7 +319,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
     <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
     <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR on GitHub</span></button>
-    <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Clear PR Draft</span></button>
+    <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
   </div>
 
   <div class="status-area" id="status-area" style="display:none">
