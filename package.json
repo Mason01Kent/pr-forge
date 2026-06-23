@@ -2,7 +2,7 @@
   "name": "pr-forge",
   "displayName": "PR Forge",
   "description": "AI-powered pull request description and code review generator with live streaming, model picker, and one-click GitHub submission. Supports DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, and Ollama.",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "publisher": "masonkent",
   "icon": "media/icon.png",
   "galleryBanner": {
