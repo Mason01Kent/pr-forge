@@ -454,8 +454,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const canSubmit = state.prBodyReady && !onBaseBranch;
     el('btn-pr-body').disabled         = onBaseBranch;
     el('btn-pr-review').disabled       = onBaseBranch;
-    el('btn-pr-body').title            = onBaseBranch ? 'Switch to a feature branch first' : '';
-    el('btn-pr-review').title          = onBaseBranch ? 'Switch to a feature branch first' : '';
+    el('btn-pr-body').title            = onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR title and description to paste into GitHub when opening a pull request.';
+    el('btn-pr-review').title          = onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR body AND a code review of your diff — blocking issues, suggestions, security concerns, and a verdict. Run this before asking teammates to review.';
     el('btn-submit-pr').disabled       = !canSubmit;
     el('btn-submit-draft-pr').disabled = !canSubmit;
     el('btn-view-summary').disabled    = !state.prBodyReady;
