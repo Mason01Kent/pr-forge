@@ -72,9 +72,11 @@ Each project gets a `.pr-forge.json` in its root. The sidebar writes most fields
 | `.pr/PR_BODY.md` | Full PR description |
 | `.pr/PR_REVIEW.md` | Full PR review (only with **Generate Full PR Review**) |
 
-## GitHub submission
+## Submitting pull requests
 
-Submission uses your VS Code GitHub sign-in, falling back to the `GITHUB_TOKEN` environment variable. The remote `origin` must be a GitHub URL (HTTPS or SSH).
+PR Forge uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to submit pull requests. If a pull request already exists for your branch, it offers to **update** the title and body instead of creating a duplicate.
+
+The `origin` remote must be a GitHub URL (HTTPS or SSH). GitLab remote detection is included — full GitLab merge request submission is coming in a future release.
 
 ## License
 
