@@ -33,10 +33,10 @@ ext install masonkent.pr-forge
 
 **Option B — directly from this repo** (no build required):
 
-Download [`extensions/pr-forge/pr-forge-0.4.2.vsix`](extensions/pr-forge/pr-forge-0.4.2.vsix), then install it:
+Download [`extensions/pr-forge/pr-forge-0.5.0.vsix`](extensions/pr-forge/pr-forge-0.5.0.vsix), then install it:
 
 ```
-code --install-extension extensions/pr-forge/pr-forge-0.4.2.vsix
+code --install-extension extensions/pr-forge/pr-forge-0.5.0.vsix
 ```
 
 Or via the Extensions panel: `⋯ menu → Install from VSIX…`
@@ -85,6 +85,14 @@ extensions/pr-forge/      VS Code extension (TypeScript)
 docs/ROADMAP.md           Upgrade plan and feature backlog
 docs/setup.md             Setup & troubleshooting guide
 ```
+
+## Telemetry
+
+PR Forge collects anonymous usage data to help improve the extension. No code, diffs, PR content, file paths, branch names, or API keys are ever collected.
+
+**What is collected:** activation events, feature usage (generate/review/submit), provider and model names, outcome (success/error/cancelled), token counts, estimated cost, and error categories.
+
+**To opt out:** disable `telemetry.telemetryLevel` in VS Code settings, or set `"prForge.telemetry.enabled": false` in your user settings.
 
 ## License
 

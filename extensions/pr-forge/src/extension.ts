@@ -10,6 +10,7 @@ import { PrForgeConfig, migrateConfig } from './config';
 import { PROVIDERS, DEFAULT_MODELS, listModels, UsageStats } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
 import { parseRemote } from './scm/index';
+import { initTelemetry, disposeTelemetry, telemetryEvent, telemetryError, classifyError } from './telemetry';
 
 const OUTPUT_CHANNEL_NAME = 'PR Forge';
 const CONFIG_FILE_NAME = '.pr-forge.json';
@@ -278,6 +279,7 @@ async function generatePrBody(): Promise<void> {
     const abortController = new AbortController();
     let throttleTimer: ReturnType<typeof setTimeout> | undefined;
     let accumulatedBody = '';
+    const t0 = Date.now();
 
     const success = await withStatusBarSpinner(statusBarPrBody, '$(git-pull-request) PR Body', async () => {
         try {
@@ -312,6 +314,7 @@ async function generatePrBody(): Promise<void> {
             );
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             logUsage(result.usage);
+            telemetryEvent('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             PreviewPanel.createOrShow(extensionUri,
                 { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch },
                 workspaceFolder.uri.fsPath, config.outputDirectory
@@ -328,11 +331,14 @@ async function generatePrBody(): Promise<void> {
         } catch (err: unknown) {
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg === 'Request cancelled') {
+            const kind = classifyError(err);
+            if (kind === 'cancelled') {
+                telemetryEvent('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'cancelled' }, { durationMs: Date.now() - t0 });
                 log('Generation cancelled.');
                 provider.updateState({ viewMode: 'tools' });
                 return false;
             }
+            telemetryError('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'error', errorKind: kind }, { durationMs: Date.now() - t0 });
             log(`Error: ${msg}`);
             vscode.window.showErrorMessage(`PR Forge: ${msg}`);
             return false;
@@ -372,6 +378,7 @@ async function generatePrReview(): Promise<void> {
     const abortController = new AbortController();
     let throttleTimer: ReturnType<typeof setTimeout> | undefined;
     let accumulatedReview = '';
+    const t0 = Date.now();
 
     const success = await withStatusBarSpinner(statusBarPrReview, '$(comment-discussion) PR Review', async () => {
         try {
@@ -406,6 +413,7 @@ async function generatePrReview(): Promise<void> {
             );
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             logUsage(result.usage);
+            telemetryEvent('generate.prReview', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             if (result.review) {
                 PreviewPanel.createOrShow(extensionUri,
                     { kind: 'prReview', body: result.review, timestamp: new Date().toLocaleString() },
@@ -423,11 +431,14 @@ async function generatePrReview(): Promise<void> {
         } catch (err: unknown) {
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg === 'Request cancelled') {
+            const kind = classifyError(err);
+            if (kind === 'cancelled') {
+                telemetryEvent('generate.prReview', { provider: config.provider, model: config.defaultModel, outcome: 'cancelled' }, { durationMs: Date.now() - t0 });
                 log('Generation cancelled.');
                 provider.updateState({ viewMode: 'tools' });
                 return false;
             }
+            telemetryError('generate.prReview', { provider: config.provider, model: config.defaultModel, outcome: 'error', errorKind: kind }, { durationMs: Date.now() - t0 });
             log(`Error: ${msg}`);
             vscode.window.showErrorMessage(`PR Forge: ${msg}`);
             return false;
@@ -458,6 +469,7 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
     const abortController = new AbortController();
     let throttleTimer: ReturnType<typeof setTimeout> | undefined;
     let accumulatedBody = '';
+    const t0 = Date.now();
 
     const success = await withStatusBarSpinner(statusBarPrBody, '$(git-pull-request) PR Body', async () => {
         try {
@@ -492,6 +504,7 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
             );
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             logUsage(result.usage);
+            telemetryEvent('regenerate', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             lastPreviewMarkdown = result.body;
             provider.updateState({
                 viewMode: 'preview',
@@ -504,11 +517,14 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
         } catch (err: unknown) {
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             const msg = err instanceof Error ? err.message : String(err);
-            if (msg === 'Request cancelled') {
+            const kind = classifyError(err);
+            if (kind === 'cancelled') {
+                telemetryEvent('regenerate', { provider: config.provider, model: config.defaultModel, outcome: 'cancelled' }, { durationMs: Date.now() - t0 });
                 log('Regeneration cancelled.');
                 provider.updateState({ viewMode: 'preview' });
                 return false;
             }
+            telemetryError('regenerate', { provider: config.provider, model: config.defaultModel, outcome: 'error', errorKind: kind }, { durationMs: Date.now() - t0 });
             log(`Error: ${msg}`);
             vscode.window.showErrorMessage(`PR Forge: ${msg}`);
             return false;
@@ -532,6 +548,7 @@ async function setApiKey(): Promise<void> {
         }
         const keySet = await hasApiKey(extensionContext, result);
         provider.updateState({ provider: result, providerKeySet: keySet });
+        telemetryEvent('setApiKey', { provider: result });
     }
 }
 
@@ -657,9 +674,11 @@ async function submitPrInternal(draft: boolean): Promise<void> {
                     prUrl = result.url;
                     prNumber = result.number;
                     log(`PR #${prNumber} updated: ${prUrl}`);
+                    telemetryEvent('submit.pr', { draft: String(draft), mode: 'update', outcome: 'success' });
                 } catch (err: unknown) {
                     const msg = err instanceof Error ? err.message : String(err);
                     log(`PR update failed: ${msg}`);
+                    telemetryError('submit.pr', { draft: String(draft), mode: 'update', outcome: 'error', errorKind: classifyError(err) });
                     vscode.window.showErrorMessage(`PR Forge: PR update failed — ${msg}`);
                 }
             }
@@ -685,9 +704,11 @@ async function submitPrInternal(draft: boolean): Promise<void> {
                     prUrl = result.url;
                     prNumber = result.number;
                     log(`${prType} created: ${result.url}`);
+                    telemetryEvent('submit.pr', { draft: String(draft), mode: 'create', outcome: 'success' });
                 } catch (err: unknown) {
                     const msg = err instanceof Error ? err.message : String(err);
                     log(`PR submit failed: ${msg}`);
+                    telemetryError('submit.pr', { draft: String(draft), mode: 'create', outcome: 'error', errorKind: classifyError(err) });
                     vscode.window.showErrorMessage(`PR Forge: PR submit failed — ${msg}`);
                 }
             }
@@ -749,6 +770,17 @@ export function activate(context: vscode.ExtensionContext): void {
     extensionContext = context;
     outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
     log('PR Forge extension activated.');
+
+    const extVersion = context.extension.packageJSON.version as string;
+    initTelemetry(extVersion);
+    const wfOnActivate = getWorkspaceFolderWithConfig();
+    const cfgOnActivate = wfOnActivate ? readConfig(wfOnActivate) : null;
+    telemetryEvent('activated', {
+        extVersion,
+        hasConfig: String(!!cfgOnActivate),
+        provider: cfgOnActivate?.provider ?? 'none',
+        vscodeVersion: vscode.version,
+    });
 
     statusBarTools = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBarTools.command = 'prForge.openProjectConfig';
@@ -824,6 +856,7 @@ export function activate(context: vscode.ExtensionContext): void {
             writeConfig(wf, cfg);
             provider.updateState({ currentModel: model });
             log(`Model changed to ${model}`);
+            telemetryEvent('setModel', { model });
         },
         onSetRunTests: (value: boolean) => {
             const wf = getWorkspaceFolderWithConfig();
@@ -872,4 +905,5 @@ export function deactivate(): void {
     if (statusBarTools)    statusBarTools.dispose();
     if (statusBarPrBody)   statusBarPrBody.dispose();
     if (statusBarPrReview) statusBarPrReview.dispose();
+    disposeTelemetry();
 }

@@ -33,10 +33,10 @@ ext install masonkent.pr-forge
 
 **Option B — directly from this repo** (no build required):
 
-Download [`extensions/pr-forge/pr-forge-0.4.2.vsix`](extensions/pr-forge/pr-forge-0.4.2.vsix), then install it:
+Download [`extensions/pr-forge/pr-forge-0.5.0.vsix`](extensions/pr-forge/pr-forge-0.5.0.vsix), then install it:
 
 ```
-code --install-extension pr-forge-0.4.2.vsix
+code --install-extension pr-forge-0.5.0.vsix
 ```
 
 Or via the Extensions panel: `⋯ menu → Install from VSIX…`
@@ -77,6 +77,14 @@ Each project gets a `.pr-forge.json` in its root. The sidebar writes most fields
 PR Forge uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to submit pull requests. If a pull request already exists for your branch, it offers to **update** the title and body instead of creating a duplicate.
 
 The `origin` remote must be a GitHub URL (HTTPS or SSH). GitLab remote detection is included — full GitLab merge request submission is coming in a future release.
+
+## Telemetry
+
+PR Forge collects anonymous usage data to help improve the extension. No code, diffs, PR content, file paths, branch names, or API keys are ever collected.
+
+**What is collected:** activation events, feature usage (generate/review/submit), provider and model names, outcome (success/error/cancelled), token counts, estimated cost, and error categories (e.g. `auth`, `rate_limit`, `network`).
+
+**To opt out:** disable `telemetry.telemetryLevel` in VS Code settings (this turns off telemetry for all extensions), or set `"prForge.telemetry.enabled": false` in your VS Code user settings.
 
 ## License
 
