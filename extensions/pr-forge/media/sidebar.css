@@ -162,6 +162,18 @@ body {
   color: var(--vscode-button-foreground, #fff);
 }
 
+.btn-clear {
+  background: transparent;
+  color: var(--vscode-errorForeground, #f48771);
+  border: 1px solid var(--vscode-errorForeground, rgba(244,135,113,0.5));
+  opacity: 0.75;
+}
+
+.btn-clear:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(244,135,113,0.1);
+}
+
 .divider {
   border: none;
   border-top: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.3));
