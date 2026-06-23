@@ -279,7 +279,7 @@ async function generatePrBody(): Promise<void> {
         }
     });
     provider.notifyRunEnd('prBody', success);
-    provider.updateState({ configExists: true, projectName: config.projectName });
+    provider.updateState({ configExists: true, projectName: config.projectName, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
 }
 
 async function generatePrReview(): Promise<void> {
@@ -340,7 +340,7 @@ async function generatePrReview(): Promise<void> {
         }
     });
     provider.notifyRunEnd('prReview', success);
-    provider.updateState({ configExists: true, projectName: config.projectName });
+    provider.updateState({ configExists: true, projectName: config.projectName, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
 }
 
 async function setApiKey(): Promise<void> {
@@ -500,16 +500,25 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     }
 }
 
+function getCurrentBranch(workspacePath: string): string | null {
+    try {
+        return execSync('git rev-parse --abbrev-ref HEAD', { cwd: workspacePath, timeout: 5000 }).toString().trim();
+    } catch {
+        return null;
+    }
+}
+
 async function refreshSidebarState(context: vscode.ExtensionContext): Promise<void> {
     const wf = getWorkspaceFolderWithConfig();
     if (!wf) return;
     const cfg = readConfig(wf);
+    const branch = getCurrentBranch(wf.uri.fsPath);
     if (cfg) {
         const keySet = await hasApiKey(context, cfg.provider);
-        provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet });
+        provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet, currentBranch: branch, baseBranch: cfg.baseBranch });
         await restoreOutputState(wf, cfg);
     } else {
-        provider.updateState({ configExists: false, projectName: wf.name });
+        provider.updateState({ configExists: false, projectName: wf.name, currentBranch: branch, baseBranch: null });
     }
 }
 
