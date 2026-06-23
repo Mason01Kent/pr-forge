@@ -1,7 +1,7 @@
 import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { chatComplete, chatCompleteStream, getModelLimits, LLMClientOptions } from './llmClient';
+import { chatComplete, chatCompleteStream, getModelLimits, LLMClientOptions, UsageStats } from './llmClient';
 
 export interface PrGeneratorOptions {
   workspacePath: string;
@@ -30,6 +30,7 @@ export interface PrGeneratorResult {
   outputDir: string;
   branch: string;
   headSha: string;
+  usage: UsageStats;
 }
 
 // Generated/noisy files processed last so source files always fit first.
@@ -86,8 +87,9 @@ function runTestCommand(opts: PrGeneratorOptions): Promise<string> {
 /**
  * Split an array of per-file diffs into batches, each fitting within chunkSize.
  * A single file larger than chunkSize gets its own batch, truncated with a note.
+ * Exported for testing.
  */
-function batchFileDiffs(fileDiffs: { file: string; diff: string }[], chunkSize: number): string[] {
+export function batchFileDiffs(fileDiffs: { file: string; diff: string }[], chunkSize: number): string[] {
   const batches: string[] = [];
   let current = '';
   for (const { file, diff } of fileDiffs) {
@@ -245,10 +247,19 @@ Respond with ONLY the title text. No quotes, no markdown, no explanation.`,
   const cleanTitle = title.replace(/^["']|["']$/g, '').trim();
   opts.onLog(`Title: ${cleanTitle}`);
 
+  const totalUsage: UsageStats = { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 };
+  function accumulateUsage(u: UsageStats): void {
+    totalUsage.inputTokens  += u.inputTokens;
+    totalUsage.outputTokens += u.outputTokens;
+    if (u.estimatedCostUsd !== undefined) {
+      totalUsage.estimatedCostUsd = (totalUsage.estimatedCostUsd ?? 0) + u.estimatedCostUsd;
+    }
+  }
+
   // Generate PR body — stream tokens to onToken so the sidebar preview fills live
   opts.onLog('Generating PR body...');
   let body = '';
-  await chatCompleteStream(opts.llm, [
+  const bodyUsage = await chatCompleteStream(opts.llm, [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
@@ -279,6 +290,7 @@ Write in markdown. Be specific about what changed and why.`,
     body += delta;
     opts.onToken?.(delta);
   }, opts.signal);
+  accumulateUsage(bodyUsage);
   opts.onLog('PR body generated.');
 
   // Generate PR review (optional) — also streamed
@@ -286,7 +298,7 @@ Write in markdown. Be specific about what changed and why.`,
   if (opts.generateReview) {
     opts.onLog('Generating PR review...');
     review = '';
-    await chatCompleteStream(opts.llm, [
+    const reviewUsage = await chatCompleteStream(opts.llm, [
       { role: 'system', content: systemPrompt },
       {
         role: 'user',
@@ -313,6 +325,7 @@ ${testOutput}`,
       review! += delta;
       opts.onToken?.(delta);
     }, opts.signal);
+    accumulateUsage(reviewUsage);
     opts.onLog('PR review generated.');
   }
 
@@ -326,7 +339,7 @@ ${testOutput}`,
   }
   opts.onLog(`Output written to ${outputDir}`);
 
-  return { title: cleanTitle, body, review, outputDir, branch, headSha };
+  return { title: cleanTitle, body, review, outputDir, branch, headSha, usage: totalUsage };
 }
 
 /**
@@ -400,7 +413,7 @@ Write in markdown. Be specific about what changed and why.`;
   opts.onLog(`Regenerating with instruction: "${instruction}"`);
 
   let body = '';
-  await chatCompleteStream(opts.llm, [
+  const regenUsage = await chatCompleteStream(opts.llm, [
     { role: 'system', content: systemPrompt },
     { role: 'user',      content: originalUserMessage },
     { role: 'assistant', content: previousDraft },
@@ -436,5 +449,5 @@ Respond with ONLY the title text. No quotes, no markdown, no explanation.`,
   fs.writeFileSync(path.join(outputDir, 'PR_BODY.md'), body, 'utf-8');
   opts.onLog(`Output written to ${outputDir}`);
 
-  return { title: cleanTitle, body, outputDir, branch, headSha };
+  return { title: cleanTitle, body, outputDir, branch, headSha, usage: regenUsage };
 }

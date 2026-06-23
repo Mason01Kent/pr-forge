@@ -2,7 +2,7 @@
   "name": "pr-forge",
   "displayName": "PR Forge",
   "description": "AI-powered PR description and review generator. Supports DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, and Ollama.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "masonkent",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -104,11 +104,20 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src",
+    "test": "mocha"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
+    "@eslint/js": "^10.0.1",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.62.0",
+    "@typescript-eslint/parser": "^8.62.0",
+    "eslint": "^10.5.0",
+    "mocha": "^11.7.6",
+    "ts-node": "^10.9.2",
     "typescript": "^5.3.0"
   }
 }
