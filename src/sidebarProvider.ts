@@ -364,15 +364,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('branch-row').style.display = 'none';
     }
 
-    const onBaseBranch = _onBaseBranch;
-    const canSubmit = state.prBodyReady && !onBaseBranch;
-    el('btn-submit-pr').disabled      = !canSubmit;
-    el('btn-submit-draft-pr').disabled = !canSubmit;
-    el('btn-view-summary').disabled    = !state.prBodyReady;
-    el('btn-submit-pr').title      = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
-    el('btn-submit-draft-pr').title = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
-    el('btn-view-summary').title    = state.prBodyReady ? '' : 'Generate a PR Body first';
-
     // Update generate button labels to Regenerate once content exists
     el('btn-pr-body-label').textContent   = state.prBodyReady ? '⇄ Regenerate PR Body' : '⇄ Generate PR Body';
     const reviewDone = state.lastRunStatus === 'success' && state.lastRunType === 'prReview';
@@ -383,6 +374,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     } else {
       setRunning(false, '');
     }
+
+    // Apply content/branch-aware button states AFTER setRunning so it
+    // doesn't unconditionally re-enable all buttons and override these.
+    const onBaseBranch = _onBaseBranch;
+    const canSubmit = state.prBodyReady && !onBaseBranch;
+    el('btn-submit-pr').disabled      = !canSubmit;
+    el('btn-submit-draft-pr').disabled = !canSubmit;
+    el('btn-view-summary').disabled    = !state.prBodyReady;
+    el('btn-submit-pr').title      = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
+    el('btn-submit-draft-pr').title = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
+    el('btn-view-summary').title    = state.prBodyReady ? '' : 'Generate a PR Body first';
 
     // Preview view fields
     const isPrBody = state.previewKind === 'prBody';
