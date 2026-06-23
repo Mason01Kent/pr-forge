@@ -304,7 +304,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="section">
-    <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>View PR Preview</span></button>
+    <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>View PR Body</span></button>
     <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
     <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
     <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Clear PR Draft</span></button>
@@ -481,7 +481,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-view-summary').disabled    = !state.prBodyReady;
     el('btn-submit-pr').title          = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
     el('btn-submit-draft-pr').title    = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
-    el('btn-view-summary').title       = state.prBodyReady ? '' : 'Generate a PR Body first';
+    el('btn-view-summary').title       = state.prBodyReady ? 'Open the full PR Body panel' : 'Generate a PR Body first';
     el('btn-clear-pr').style.display   = state.prBodyReady ? '' : 'none';
 
     const isPrBody = state.previewKind === 'prBody';
@@ -540,7 +540,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           el('btn-view-summary').disabled    = false;
           el('btn-submit-pr').title          = _onBaseBranch ? 'Switch to a feature branch first' : '';
           el('btn-submit-draft-pr').title    = _onBaseBranch ? 'Switch to a feature branch first' : '';
-          el('btn-view-summary').title       = '';
+          el('btn-view-summary').title       = 'Open the full PR Body panel';
           el('btn-pr-body-label').textContent = '⇄ Regenerate PR Body';
         }
         if (msg.runType === 'prReview' && msg.success) {

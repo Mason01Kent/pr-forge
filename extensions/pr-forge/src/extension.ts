@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import { SidebarProvider } from './sidebarProvider';
-import { PreviewPanel } from './previewPanel';
+import { PreviewPanel, PreviewContent } from './previewPanel';
 import { renderMarkdown } from './markdownRenderer';
 import { generatePr, regeneratePr, clearDiffCache } from './prGenerator';
 import { PrForgeConfig, migrateConfig } from './config';
@@ -18,13 +18,15 @@ const CONFIG_FILE_NAME = '.pr-forge.json';
 let extensionUri: vscode.Uri;
 let extensionContext: vscode.ExtensionContext;
 
-
 let outputChannel: vscode.OutputChannel;
 let statusBarTools: vscode.StatusBarItem;
 let statusBarPrBody: vscode.StatusBarItem;
 let statusBarPrReview: vscode.StatusBarItem;
 let provider: SidebarProvider;
 let lastPreviewMarkdown = '';
+let lastPreviewContent: PreviewContent | undefined;
+let lastPreviewWorkspacePath = '';
+let lastPreviewOutputDir = '';
 
 function log(msg: string): void {
     outputChannel.appendLine(`[${new Date().toLocaleTimeString()}] ${msg}`);
@@ -315,10 +317,11 @@ async function generatePrBody(): Promise<void> {
             if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             logUsage(result.usage);
             telemetryEvent('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
-            PreviewPanel.createOrShow(extensionUri,
-                { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch },
-                workspaceFolder.uri.fsPath, config.outputDirectory
-            );
+            const previewContent: PreviewContent = { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch };
+            lastPreviewContent = previewContent;
+            lastPreviewWorkspacePath = workspaceFolder.uri.fsPath;
+            lastPreviewOutputDir = config.outputDirectory;
+            PreviewPanel.createOrShow(extensionUri, previewContent, workspaceFolder.uri.fsPath, config.outputDirectory);
             lastPreviewMarkdown = result.body;
             provider.updateState({
                 viewMode: 'preview',
@@ -345,7 +348,8 @@ async function generatePrBody(): Promise<void> {
         }
     });
     provider.notifyRunEnd('prBody', success);
-    provider.updateState({ configExists: true, projectName: config.projectName, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
+    provider.updateState({ configExists: true, projectName: config.projectName, provider: config.provider, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
+    hasApiKey(extensionContext, config.provider).then(keySet => provider.updateState({ providerKeySet: keySet }));
 }
 
 async function generatePrReview(): Promise<void> {
@@ -415,10 +419,11 @@ async function generatePrReview(): Promise<void> {
             logUsage(result.usage);
             telemetryEvent('generate.prReview', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             if (result.review) {
-                PreviewPanel.createOrShow(extensionUri,
-                    { kind: 'prReview', body: result.review, timestamp: new Date().toLocaleString() },
-                    workspaceFolder.uri.fsPath, config.outputDirectory
-                );
+                const reviewContent: PreviewContent = { kind: 'prReview', body: result.review, timestamp: new Date().toLocaleString() };
+                lastPreviewContent = reviewContent;
+                lastPreviewWorkspacePath = workspaceFolder.uri.fsPath;
+                lastPreviewOutputDir = config.outputDirectory;
+                PreviewPanel.createOrShow(extensionUri, reviewContent, workspaceFolder.uri.fsPath, config.outputDirectory);
                 lastPreviewMarkdown = result.review;
                 provider.updateState({
                     viewMode: 'preview',
@@ -445,7 +450,8 @@ async function generatePrReview(): Promise<void> {
         }
     });
     provider.notifyRunEnd('prReview', success);
-    provider.updateState({ configExists: true, projectName: config.projectName, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
+    provider.updateState({ configExists: true, projectName: config.projectName, provider: config.provider, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
+    hasApiKey(extensionContext, config.provider).then(keySet => provider.updateState({ providerKeySet: keySet }));
 }
 
 async function regeneratePrBodyWithInstruction(instruction: string): Promise<void> {
@@ -835,7 +841,11 @@ export function activate(context: vscode.ExtensionContext): void {
             provider.updateState({ viewMode: 'tools' });
         },
         onShowPreview: () => {
-            provider.updateState({ viewMode: 'preview' });
+            if (lastPreviewContent) {
+                PreviewPanel.createOrShow(extensionUri, lastPreviewContent, lastPreviewWorkspacePath, lastPreviewOutputDir);
+            } else {
+                provider.updateState({ viewMode: 'preview' });
+            }
         },
         onCopyPreviewTitle: (title: string) => {
             vscode.env.clipboard.writeText(title);
