@@ -1,5 +1,9 @@
 # PR Forge
 
+[![Version](https://img.shields.io/visual-studio-marketplace/v/masonkent.pr-forge)](https://marketplace.visualstudio.com/items?itemName=masonkent.pr-forge)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/masonkent.pr-forge)](https://marketplace.visualstudio.com/items?itemName=masonkent.pr-forge)
+[![License](https://img.shields.io/github/license/Mason01Kent/pr-forge)](https://github.com/Mason01Kent/pr-forge/blob/master/LICENSE)
+
 AI-powered PR description and review generator for VS Code.
 
 PR Forge turns your branch diff into a polished PR title, description, and full code review — then submits the PR to GitHub, all from a sidebar panel or the status bar.
@@ -17,7 +21,7 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 
 ## Install
 
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=masonkent.pr-forge) or via the CLI:
+Search **"PR Forge"** in the VS Code Extensions panel, or install via CLI:
 
 ```
 ext install masonkent.pr-forge
@@ -39,7 +43,7 @@ Each project gets a `.pr-forge.json` in its root. Key fields:
 | `baseBranch` | Branch to diff against (default `main`). |
 | `provider` / `defaultModel` | AI provider and model — updated automatically when you switch via **Set API Key**. |
 | `outputDirectory` | Where generated files go (default `.pr/`). |
-| `reviewRulesFiles` | Files injected as project standards into the prompt. |
+| `reviewRulesFiles` | Files (e.g. `README.md`, `AGENTS.md`) injected as project standards into the prompt. |
 | `prRiskAreas` | Risk areas to highlight in the body/review. |
 | `prBodySections` | Section headings for the generated PR body. |
 
