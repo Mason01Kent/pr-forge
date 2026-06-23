@@ -25,6 +25,13 @@ export interface PrGeneratorResult {
   branch: string;
 }
 
+// Max chars per LLM call. ~30KB leaves plenty of room for the prompt
+// wrapper and the 4096-token completion on any supported provider.
+const CHUNK_SIZE = 30_000;
+
+// Generated/noisy files processed last so source files always fit first.
+const NOISY_PATTERNS = /\.(lock|min\.js|min\.css|map|snap|Designer\.cs|g\.cs)$|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Migrations\/.*\.cs$/i;
+
 function safeExec(cmd: string, cwd: string): string {
   try {
     return execSync(cmd, { cwd, timeout: 15000 }).toString();
@@ -49,7 +56,6 @@ function runTestCommand(opts: PrGeneratorOptions): Promise<string> {
       proc.kill();
       resolve(stdout.concat(stderr).map((b) => b.toString()).join('') + '\n\n[Test timed out after 120s]');
     }, 120_000);
-
     proc.stdout?.on('data', (data: Buffer) => stdout.push(data));
     proc.stderr?.on('data', (data: Buffer) => stderr.push(data));
     proc.on('close', (code) => {
@@ -64,9 +70,60 @@ function runTestCommand(opts: PrGeneratorOptions): Promise<string> {
   });
 }
 
-function truncate(text: string, maxChars: number, label: string): string {
-  if (text.length <= maxChars) { return text; }
-  return text.slice(0, maxChars) + `\n\n[...${label} truncated — ${text.length} chars total, showing first ${maxChars}...]`;
+/**
+ * Split an array of per-file diffs into batches that each fit within CHUNK_SIZE.
+ * A single file larger than CHUNK_SIZE gets its own batch, truncated with a note.
+ */
+function batchFileDiffs(fileDiffs: { file: string; diff: string }[]): string[] {
+  const batches: string[] = [];
+  let current = '';
+  for (const { file, diff } of fileDiffs) {
+    const entry = diff.length > CHUNK_SIZE
+      ? diff.slice(0, CHUNK_SIZE) + `\n\n[...diff for ${file} truncated at ${CHUNK_SIZE} chars]`
+      : diff;
+    if (current.length + entry.length > CHUNK_SIZE && current.length > 0) {
+      batches.push(current);
+      current = entry;
+    } else {
+      current += entry;
+    }
+  }
+  if (current.length > 0) { batches.push(current); }
+  return batches;
+}
+
+/**
+ * If the diff fits in one chunk, return it directly.
+ * If not, summarise each batch with a quick LLM call, then return the combined summaries.
+ */
+async function buildDiffContext(
+  fileDiffs: { file: string; diff: string }[],
+  llm: LLMClientOptions,
+  projectName: string,
+  onLog: (msg: string) => void
+): Promise<string> {
+  const batches = batchFileDiffs(fileDiffs);
+  if (batches.length === 1) {
+    return batches[0];
+  }
+
+  onLog(`Diff too large for one pass — summarising ${batches.length} batches...`);
+  const summaries: string[] = [];
+  for (let i = 0; i < batches.length; i++) {
+    onLog(`  Summarising batch ${i + 1} of ${batches.length}...`);
+    const summary = await chatComplete(llm, [
+      {
+        role: 'system',
+        content: `You are a senior software engineer analysing a partial diff for the ${projectName} project.`,
+      },
+      {
+        role: 'user',
+        content: `Summarise the following code changes concisely. Focus on WHAT changed and WHY it matters. Be specific about function names, classes, and logic changes. Do not pad.\n\n${batches[i]}`,
+      },
+    ]);
+    summaries.push(`### Batch ${i + 1} summary\n${summary}`);
+  }
+  return summaries.join('\n\n');
 }
 
 export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorResult> {
@@ -74,51 +131,51 @@ export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorR
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
   const commits = safeExec(`git log ${opts.baseBranch}..HEAD --oneline`, cwd);
   const diffStat = safeExec(`git diff --stat ${opts.baseBranch}..HEAD`, cwd);
-  const files = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
+  const files    = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
 
-  // Fetch diff per-file so large files can be dropped individually
-  const changedFiles = files.split('\n').filter(Boolean).map(l => l.split('\t').pop() ?? '');
-  let diff = '';
-  const DIFF_BUDGET = 40_000;
-  for (const file of changedFiles) {
-    if (diff.length >= DIFF_BUDGET) {
-      diff += `\n\n[...remaining files omitted — diff budget (${DIFF_BUDGET} chars) reached...]`;
-      break;
-    }
-    const fileDiff = safeExec(`git diff ${opts.baseBranch}..HEAD -- "${file}"`, cwd);
-    if (diff.length + fileDiff.length > DIFF_BUDGET) {
-      diff += truncate(fileDiff, DIFF_BUDGET - diff.length, `diff for ${file}`);
-      break;
-    }
-    diff += fileDiff;
-  }
+  // Collect per-file diffs — source files first, generated files last
+  const allFiles = files.split('\n').filter(Boolean).map(l => l.split('\t').pop() ?? '');
+  const ordered  = [
+    ...allFiles.filter(f => !NOISY_PATTERNS.test(f)),
+    ...allFiles.filter(f =>  NOISY_PATTERNS.test(f)),
+  ];
+  const fileDiffs = ordered.map(file => ({
+    file,
+    diff: safeExec(`git diff ${opts.baseBranch}..HEAD -- "${file}"`, cwd),
+  }));
 
   opts.onLog(`Branch: ${branch}`);
-  opts.onLog(`Commits: ${commits.split('\n').length} commits`);
-  opts.onLog(`Files changed: ${changedFiles.length} (diff: ${diff.length} chars)`);
+  opts.onLog(`Commits: ${commits.split('\n').filter(Boolean).length}`);
+  opts.onLog(`Files changed: ${allFiles.length}`);
 
-  // Load review rules — cap each file so one giant README can't blow the budget
-  let reviewRules = '';
+  // Build diff context — single pass or multi-batch summarise
+  const diffContext = await buildDiffContext(fileDiffs, opts.llm, opts.projectName, opts.onLog);
+
+  // Load review rules — cap each file at CHUNK_SIZE/4 so one giant README
+  // doesn't crowd out the diff in the final prompt
   const ruleParts: string[] = [];
   for (const rulesFile of opts.reviewRulesFiles) {
     try {
       const fullPath = path.join(opts.workspacePath, rulesFile);
       if (fs.existsSync(fullPath)) {
-        const content = truncate(fs.readFileSync(fullPath, 'utf-8'), 8_000, rulesFile);
+        let content = fs.readFileSync(fullPath, 'utf-8');
+        const cap = Math.floor(CHUNK_SIZE / 4);
+        if (content.length > cap) {
+          content = content.slice(0, cap) + `\n\n[...${rulesFile} truncated]`;
+        }
         ruleParts.push(`--- ${rulesFile} ---\n${content}`);
       }
-    } catch {
-      // skip files that can't be read
-    }
+    } catch { /* skip */ }
   }
-  if (ruleParts.length > 0) {
-    reviewRules = ruleParts.join('\n\n---\n\n');
-  }
+  const reviewRules = ruleParts.join('\n\n---\n\n');
 
-  // Run tests — cap output so a verbose test suite doesn't consume the budget
+  // Test output — keep the tail so failure messages are never cut off
   opts.onLog('Running tests...');
   const rawTestOutput = await runTestCommand(opts);
-  const testOutput = truncate(rawTestOutput, 6_000, 'test output');
+  const TEST_CAP = 6_000;
+  const testOutput = rawTestOutput.length <= TEST_CAP
+    ? rawTestOutput
+    : `[...showing last ${TEST_CAP} chars — failures appear at end...]\n\n` + rawTestOutput.slice(-TEST_CAP);
   opts.onLog('Tests completed.');
 
   const systemPrompt = `You are a senior software engineer writing a GitHub pull request for the ${opts.projectName} project.
@@ -162,8 +219,8 @@ ${commits}
 Changed files:
 ${diffStat}
 
-Diff:
-${diff}
+${diffContext.length > CHUNK_SIZE * 0.8 ? 'Diff summaries' : 'Diff'}:
+${diffContext}
 
 Test output:
 ${testOutput}
@@ -198,8 +255,8 @@ Risk areas: ${opts.prRiskAreas.join(', ')}
 
 ${reviewRules ? 'Project standards:\n' + reviewRules : ''}
 
-Diff:
-${diff}
+${diffContext.length > CHUNK_SIZE * 0.8 ? 'Diff summaries' : 'Diff'}:
+${diffContext}
 
 Test output:
 ${testOutput}`,
