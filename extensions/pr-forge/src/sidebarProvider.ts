@@ -15,6 +15,10 @@ export interface SidebarState {
     previewKind: 'prBody' | 'prReview' | null;
     previewTitle: string | null;
     previewBody: string | null;
+    submittedPrNumber: number | null;
+    submittedPrUrl: string | null;
+    submittedPrDraft: boolean;
+    submittedPrTimestamp: string | null;
 }
 
 type WebviewToExtMsg =
@@ -29,7 +33,8 @@ type WebviewToExtMsg =
     | { command: 'showTools' }
     | { command: 'showPreview' }
     | { command: 'copyPreviewTitle' }
-    | { command: 'copyPreviewBody' };
+    | { command: 'copyPreviewBody' }
+    | { command: 'openPrUrl' };
 
 type ExtToWebviewMsg =
     | { type: 'stateUpdate'; state: SidebarState }
@@ -49,6 +54,7 @@ export interface SidebarCallbacks {
     onShowPreview: () => void;
     onCopyPreviewTitle: (title: string) => void;
     onCopyPreviewBody: () => void;
+    onOpenPrUrl: () => void;
 }
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -69,6 +75,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         previewKind: null,
         previewTitle: null,
         previewBody: null,
+        submittedPrNumber: null,
+        submittedPrUrl: null,
+        submittedPrDraft: false,
+        submittedPrTimestamp: null,
     };  
 
     constructor(
@@ -131,9 +141,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'copyPreviewBody':
                     this._callbacks.onCopyPreviewBody();
                     break;
+                case 'openPrUrl':
+                    this._callbacks.onOpenPrUrl();
+                    break;
             }
         });
     }
+
+    public getState(): SidebarState { return this._state; }
 
     public updateState(partial: Partial<SidebarState>): void {
         this._state = { ...this._state, ...partial };
@@ -206,6 +221,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       <span class="label">Last run</span>
       <span class="value" id="last-run-info"></span>
     </div>
+    <div class="card-row" id="submitted-pr-row" style="display:none">
+      <span class="label">Submitted</span>
+      <button class="btn-link" id="btn-submitted-pr-link"></button>
+    </div>
   </div>
 
   <div class="actions">
@@ -268,6 +287,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-submit-pr').addEventListener('click',         () => vscode.postMessage({ command: 'submitPr' }));
   el('btn-submit-draft-pr').addEventListener('click',   () => vscode.postMessage({ command: 'submitDraftPr' }));
   el('btn-view-summary').addEventListener('click',      () => vscode.postMessage({ command: 'showPreview' }));
+  el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
 
   // Preview view buttons
   el('btn-back').addEventListener('click', () => vscode.postMessage({ command: 'showTools' }));
@@ -312,6 +332,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const icon  = state.lastRunStatus === 'success' ? '✓' : '✗';
       el('last-run-info').textContent = icon + ' ' + label + ' · ' + state.lastRunTimestamp;
       el('last-run-row').style.display = '';
+    }
+
+    if (state.submittedPrNumber && state.submittedPrTimestamp) {
+      const draftTag = state.submittedPrDraft ? ' (Draft)' : '';
+      el('btn-submitted-pr-link').textContent = '↗ PR #' + state.submittedPrNumber + draftTag + ' · ' + state.submittedPrTimestamp;
+      el('submitted-pr-row').style.display = '';
+    } else {
+      el('submitted-pr-row').style.display = 'none';
     }
 
     el('btn-submit-pr').disabled      = !state.prBodyReady;

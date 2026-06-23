@@ -489,6 +489,12 @@ async function submitPrInternal(draft: boolean): Promise<void> {
 
     // Show success after the spinner has closed
     if (prUrl && prNumber) {
+        provider.updateState({
+            submittedPrNumber: prNumber,
+            submittedPrUrl: prUrl,
+            submittedPrDraft: draft,
+            submittedPrTimestamp: new Date().toLocaleTimeString(),
+        });
         const open = await vscode.window.showInformationMessage(`${prType} #${prNumber} created!`, 'Open in Browser');
         if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(prUrl)); }
     }
@@ -572,6 +578,10 @@ export function activate(context: vscode.ExtensionContext): void {
                 vscode.env.clipboard.writeText(lastPreviewMarkdown);
                 vscode.window.showInformationMessage('Content copied to clipboard');
             }
+        },
+        onOpenPrUrl: () => {
+            const url = provider.getState().submittedPrUrl;
+            if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
         },
     });
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, provider));
