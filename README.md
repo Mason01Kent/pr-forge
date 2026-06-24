@@ -19,6 +19,7 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 - **Model picker** — dropdown lists available models from your provider's live API; falls back to curated defaults if unreachable. Selection saved to config automatically.
 - **Large-context mode** — Claude, GPT-4o, and DeepSeek receive the full diff in one shot; chunked summarization only kicks in for smaller models.
 - **Submit PR / Submit as Draft** — creates or updates the pull request on GitHub via the REST API without leaving VS Code.
+- **Post Review to PR** — post the generated review as a single comment on the submitted pull request, using your existing GitHub sign-in (no Copilot, no extra cost).
 - **Cancellable generation** — hit Cancel on the progress notification at any point to abort mid-stream.
 - **Multi-provider** — DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, Ollama. API keys stored in VS Code SecretStorage, never in project files.
 - **Project type detection** — auto-detects .NET, Node, React, and Python to seed sensible defaults.
@@ -33,10 +34,10 @@ ext install masonkent.pr-forge
 
 **Option B — directly from this repo** (no build required):
 
-Download [`extensions/pr-forge/pr-forge-0.6.0.vsix`](extensions/pr-forge/pr-forge-0.6.0.vsix), then install it:
+Download [`extensions/pr-forge/pr-forge-1.0.0.vsix`](extensions/pr-forge/pr-forge-1.0.0.vsix), then install it:
 
 ```
-code --install-extension extensions/pr-forge/pr-forge-0.6.0.vsix
+code --install-extension extensions/pr-forge/pr-forge-1.0.0.vsix
 ```
 
 Or via the Extensions panel: `⋯ menu → Install from VSIX…`
@@ -76,7 +77,7 @@ Each project gets a `.pr-forge.json` in its root. The sidebar writes most fields
 
 PR Forge uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to submit pull requests. If a pull request already exists for your branch, it offers to **update** the title and body instead of creating a duplicate.
 
-The `origin` remote must be a GitHub URL (HTTPS or SSH). GitLab remote detection is included — full GitLab merge request submission is coming in a future release.
+The `origin` remote must be a GitHub URL (HTTPS or SSH). **PR Forge 1.0 supports GitHub only** — non-GitHub remotes (including GitLab) are rejected with a clear message. GitLab merge request submission is planned for a future release.
 
 ## Repo layout
 
