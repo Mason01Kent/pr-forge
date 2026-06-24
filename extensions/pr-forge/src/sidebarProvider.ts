@@ -17,6 +17,7 @@ export interface SidebarState {
     bodyExists: boolean;
     reviewExists: boolean;
     generatedTitle: string;
+    generatedTitleShort: string;
     lastGeneratedAt: string | null;
     isRunning: boolean;
     prBodyReady: boolean;
@@ -110,6 +111,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         bodyExists: false,
         reviewExists: false,
         generatedTitle: 'PR Content',
+        generatedTitleShort: 'PR Content',
         lastGeneratedAt: null,
         isRunning: false,
         prBodyReady: false,
@@ -304,7 +306,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="card-row" id="commit-row" style="display:none"><span class="label">Recent commits</span><label class="toggle"><input type="checkbox" id="chk-commits"><span class="toggle-label" id="commits-label">Off</span></label></div>
     <div class="card-row" id="branch-row" style="display:none"><span class="label">Branch</span><span class="value" id="branch-name"></span></div>
     <div class="card-row" id="last-run-row" style="display:none"><span class="label">Last run</span><span class="value" id="last-run-info"></span></div>
-    <div class="card-row" id="generated-title-row" style="display:none"><span class="label">Generated title</span><span class="value gh-pr-title-bar-text" id="generated-title-text"></span></div>
+    <div class="card-row" id="generated-title-row" style="display:none"><span class="label">Title</span><span class="value gh-pr-title-bar-text" id="generated-title-text"></span></div>
     <div class="card-row" id="submitted-pr-row" style="display:none"><span class="label">Submitted</span><button class="btn-link" id="btn-submitted-pr-link"></button></div>
   </div>
 
@@ -325,17 +327,31 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   <div class="section">
     <div class="btn-row">
-      <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>Open Body File</span></button>
-      <button class="btn btn-secondary" id="btn-view-review" disabled>${ic.review}<span>Open Review File</span></button>
+    <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>Open Body File</span></button>
+    <button class="btn btn-secondary" id="btn-view-review" disabled>${ic.review}<span>Open Review File</span></button>
+  </div>
+  <div class="btn-row" style="margin-top: 8px;">
+    <button class="btn btn-secondary" id="btn-open-summary" disabled>${ic.preview}<span>Preview Body</span></button>
+    <button class="btn btn-secondary" id="btn-open-review" disabled>${ic.review}<span>Preview Review</span></button>
+  </div>
+  <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
+  <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
+  <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR on GitHub</span></button>
+  <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
+  </div>
+
+  <div class="section generated-content-card" id="generated-content-card" style="display:none">
+    <div class="generated-content-summary">
+      <span class="generated-content-status" id="generated-content-status"></span>
     </div>
-    <div class="btn-row" style="margin-top: 8px;">
-      <button class="btn btn-secondary" id="btn-open-summary" disabled>${ic.preview}<span>Preview Body</span></button>
-      <button class="btn btn-secondary" id="btn-open-review" disabled>${ic.review}<span>Preview Review</span></button>
+    <div class="btn-row generated-content-actions">
+      <button class="btn btn-secondary btn-compact" id="btn-generated-open-body" disabled>${ic.preview}<span>Open Body File</span></button>
+      <button class="btn btn-secondary btn-compact" id="btn-generated-open-review" disabled>${ic.review}<span>Open Review File</span></button>
     </div>
-    <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
-    <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
-    <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR on GitHub</span></button>
-    <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
+    <div class="btn-row generated-content-actions">
+      <button class="btn btn-secondary btn-compact" id="btn-generated-preview-body" disabled>${ic.preview}<span>Preview Body</span></button>
+      <button class="btn btn-secondary btn-compact" id="btn-generated-preview-review" disabled>${ic.review}<span>Preview Review</span></button>
+    </div>
   </div>
 
   <div class="activity-area" id="activity-area">
@@ -384,7 +400,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-view-review','btn-open-summary','btn-open-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-clear-pr'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-view-review','btn-open-summary','btn-open-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -397,6 +413,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-view-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
   el('btn-open-summary').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));
   el('btn-open-review').addEventListener('click', () => vscode.postMessage({ command: 'openReviewPanel' }));
+  el('btn-generated-open-body').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
+  el('btn-generated-open-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
+  el('btn-generated-preview-body').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));
+  el('btn-generated-preview-review').addEventListener('click', () => vscode.postMessage({ command: 'openReviewPanel' }));
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-open-github').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-clear-pr').addEventListener('click', () => vscode.postMessage({ command: 'clearPr' }));
@@ -467,7 +487,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     if (hasSuccess) {
-      const title = state.generatedTitle || 'PR Content';
+      const title = state.generatedTitleShort || state.generatedTitle || 'PR Content';
       status.textContent = '✓ ' + title + ' · ' + (state.lastGeneratedAt || state.lastRunTimestamp || '');
       bodyBtn.style.display = state.bodyExists ? '' : 'none';
       reviewBtn.style.display = state.reviewExists ? '' : 'none';
@@ -530,7 +550,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     if (state.lastGeneratedAt || state.lastRunTimestamp) {
-      const label = state.generatedTitle || 'PR Content';
+      const label = state.generatedTitleShort || state.generatedTitle || 'PR Content';
       const icon = state.lastRunStatus === 'success' ? '✓' : '✕';
       const ts = state.lastGeneratedAt || state.lastRunTimestamp;
       el('last-run-info').textContent = icon + ' ' + label + ' · ' + ts;
@@ -540,10 +560,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     if (state.titleExists || state.bodyExists || state.reviewExists) {
-      const titleText = state.generatedTitle || 'PR Content';
+      const titleText = state.generatedTitleShort || state.generatedTitle || 'PR Content';
       const titleEl = el('generated-title-text');
       titleEl.textContent = titleText;
-      titleEl.title = titleText;
+      titleEl.title = state.generatedTitle || 'PR Content';
       el('generated-title-row').style.display = '';
     } else {
       el('generated-title-row').style.display = 'none';
@@ -594,6 +614,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-open-review').title = state.reviewExists ? 'Preview the PR review' : 'Generate a PR Review first';
     el('btn-clear-pr').style.display = state.bodyExists || state.reviewExists || state.lastRunStatus === 'error' ? '' : 'none';
     el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
+
+    const hasGeneratedContent = state.bodyExists || state.reviewExists;
+    const generatedCard = el('generated-content-card');
+    generatedCard.style.display = hasGeneratedContent ? 'flex' : 'none';
+    const generatedStatus = el('generated-content-status');
+    generatedStatus.textContent = hasGeneratedContent
+      ? '✓ ' + (state.generatedTitleShort || state.generatedTitle || 'PR Content') + ' · ' + (state.lastGeneratedAt || state.lastRunTimestamp || '')
+      : '';
+    el('btn-generated-open-body').style.display = state.bodyExists ? '' : 'none';
+    el('btn-generated-open-review').style.display = state.reviewExists ? '' : 'none';
+    el('btn-generated-preview-body').style.display = state.bodyExists ? '' : 'none';
+    el('btn-generated-preview-review').style.display = state.reviewExists ? '' : 'none';
+    el('btn-generated-open-body').disabled = !state.bodyExists || !!state.isRunning;
+    el('btn-generated-open-review').disabled = !state.reviewExists || !!state.isRunning;
+    el('btn-generated-preview-body').disabled = !state.bodyExists || !!state.isRunning;
+    el('btn-generated-preview-review').disabled = !state.reviewExists || !!state.isRunning;
+    el('btn-generated-open-body').title = state.bodyExists ? 'Open the PR body file' : 'Generate a PR Body first';
+    el('btn-generated-open-review').title = state.reviewExists ? 'Open the PR review file' : 'Generate a PR Review first';
+    el('btn-generated-preview-body').title = state.bodyExists ? 'Preview the PR body' : 'Generate a PR Body first';
+    el('btn-generated-preview-review').title = state.reviewExists ? 'Preview the PR review' : 'Generate a PR Review first';
 
     const isPrBody = state.previewKind === 'prBody';
     el('preview-header-title').textContent = isPrBody ? 'PR Body' : 'PR Review';

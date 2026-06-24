@@ -15,7 +15,7 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 - **Generate PR Body** - AI-written title and description from your `base..HEAD` diff, optional recent commits, and test output.
 - **Generate PR Review** - structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation.
 - **Sidebar progress flow** - generation stays on the tools view, shows live step updates inline, and opens the editor tab automatically when complete.
-- **Generated title row** - shows the title from `.pr/PR_TITLE.txt` with a full tooltip and truncation in the sidebar.
+- **Title row** - shows a shortened sidebar title from `.pr/PR_TITLE.txt` with the full title in the tooltip.
 - **Inline preview with feedback** - open the PR body or review from the sidebar, then regenerate the body with a targeted instruction without re-running tests.
 - **Model picker** - dropdown lists available models from your provider API and falls back to curated defaults if needed.
 - **Large-context mode** - Claude, GPT-4o, and DeepSeek can receive the full diff directly; chunked summarization is reserved for smaller models.
