@@ -755,11 +755,12 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     }
     const remote = parseRemote(remoteUrl, token!);
     if (!remote) {
-        vscode.window.showErrorMessage(`PR Forge: Remote URL not recognised as a supported SCM host: ${remoteUrl}`);
-        return;
-    }
-    if (remote.provider.name === 'GitLab') {
-        vscode.window.showErrorMessage('PR Forge: GitLab remote detected, but Merge Request submission is not implemented yet. Use GitHub for PR submission.');
+        const isGitLab = /gitlab\.com/i.test(remoteUrl);
+        vscode.window.showErrorMessage(
+            isGitLab
+                ? 'PR Forge 1.0 supports GitHub only. GitLab Merge Request submission is planned for a future release.'
+                : `PR Forge 1.0 supports GitHub only. The "origin" remote is not a GitHub URL: ${remoteUrl}`
+        );
         return;
     }
 
@@ -890,6 +891,83 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     }
 }
 
+async function postReviewToPr(): Promise<void> {
+    const workspaceFolder = await resolveTargetProjectFolder();
+    if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+    const config = readConfig(workspaceFolder);
+    if (!config) { vscode.window.showErrorMessage('PR Forge: No config found.'); return; }
+
+    const prNumber = provider.getState().submittedPrNumber;
+    if (!prNumber) {
+        vscode.window.showErrorMessage('PR Forge: Submit the PR first, then post the review to it.');
+        return;
+    }
+
+    const reviewPath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, 'PR_REVIEW.md');
+    if (!fs.existsSync(reviewPath)) {
+        vscode.window.showErrorMessage('PR Forge: Generate a PR Review first before posting it.');
+        return;
+    }
+    const review = fs.readFileSync(reviewPath, 'utf-8').trim();
+    if (!review) {
+        vscode.window.showErrorMessage('PR Forge: The generated review is empty.');
+        return;
+    }
+
+    // GitHub auth: VS Code built-in first, then GITHUB_TOKEN.
+    let token: string | undefined;
+    try {
+        const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+        token = session.accessToken;
+    } catch {
+        token = process.env.GITHUB_TOKEN;
+    }
+    if (!token) {
+        vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
+        return;
+    }
+
+    let remoteUrl: string;
+    try {
+        remoteUrl = execSync('git remote get-url origin', { cwd: workspaceFolder.uri.fsPath }).toString().trim();
+    } catch {
+        vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?');
+        return;
+    }
+    const remote = parseRemote(remoteUrl, token);
+    if (!remote) {
+        vscode.window.showErrorMessage('PR Forge 1.0 supports GitHub only.');
+        return;
+    }
+
+    const confirm = await vscode.window.showInformationMessage(
+        `Post the generated review as a comment on PR #${prNumber}?`,
+        { modal: true },
+        'Post Review'
+    );
+    if (confirm !== 'Post Review') { return; }
+
+    const commentBody = `${review}\n\n---\n_Posted by [PR Forge](https://github.com/Mason01Kent/pr-forge)._`;
+
+    await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `PR Forge: Posting review to PR #${prNumber}...`, cancellable: false },
+        async () => {
+            try {
+                const { url } = await remote.provider.postPrComment({ owner: remote.owner, repo: remote.repo, number: prNumber, body: commentBody });
+                log(`Review posted to PR #${prNumber}: ${url}`);
+                telemetryEvent('postReview', { outcome: 'success' });
+                const open = await vscode.window.showInformationMessage(`Review posted to PR #${prNumber}.`, 'Open in Browser');
+                if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(url)); }
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                log(`Review post failed: ${msg}`);
+                telemetryError('postReview', { outcome: 'error', errorKind: classifyError(err) });
+                vscode.window.showErrorMessage(`PR Forge: Could not post review — ${msg}`);
+            }
+        }
+    );
+}
+
 function getCurrentBranch(workspacePath: string): string | null {
     try {
         return execSync('git rev-parse --abbrev-ref HEAD', { cwd: workspacePath, timeout: 5000 }).toString().trim();
@@ -999,6 +1077,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const url = provider.getState().submittedPrUrl;
             if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
         },
+        onPostReview: () => { void postReviewToPr(); },
         onClearPr: clearPrOutput,
         onCancel: cancelActiveGeneration,
         onSetModel: (model: string) => {
@@ -1074,6 +1153,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(vscode.commands.registerCommand('prForge.generatePrReview', generatePrReview));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitPr', submitPr));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitDraftPr', submitDraftPr));
+    context.subscriptions.push(vscode.commands.registerCommand('prForge.postReview', () => { void postReviewToPr(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.setApiKey', setApiKey));
     context.subscriptions.push(outputChannel, statusBarTools, statusBarPrBody, statusBarPrReview);
 

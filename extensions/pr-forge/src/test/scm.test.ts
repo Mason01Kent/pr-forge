@@ -16,18 +16,12 @@ describe('parseRemote', () => {
     assert.strictEqual(result?.provider.name, 'GitHub');
   });
 
-  it('parses GitLab HTTPS remotes', () => {
-    const result = parseRemote('https://gitlab.com/group/repo.git', 'token');
-    assert.strictEqual(result?.owner, 'group');
-    assert.strictEqual(result?.repo, 'repo');
-    assert.strictEqual(result?.provider.name, 'GitLab');
+  it('rejects GitLab HTTPS remotes (GitHub-only in 1.0)', () => {
+    assert.strictEqual(parseRemote('https://gitlab.com/group/repo.git', 'token'), null);
   });
 
-  it('parses GitLab SSH remotes', () => {
-    const result = parseRemote('git@gitlab.com:group/repo.git', 'token');
-    assert.strictEqual(result?.owner, 'group');
-    assert.strictEqual(result?.repo, 'repo');
-    assert.strictEqual(result?.provider.name, 'GitLab');
+  it('rejects GitLab SSH remotes (GitHub-only in 1.0)', () => {
+    assert.strictEqual(parseRemote('git@gitlab.com:group/repo.git', 'token'), null);
   });
 
   it('returns null for unsupported remotes', () => {

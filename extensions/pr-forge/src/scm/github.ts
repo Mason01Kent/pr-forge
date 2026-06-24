@@ -34,6 +34,17 @@ function ghRequest(
     });
 }
 
+/** Map a GitHub API status code to an actionable hint appended to the error. */
+function ghHint(statusCode: number): string {
+    switch (statusCode) {
+        case 401: return ' (Bad credentials — your GitHub token is invalid or expired. Re-authenticate via the Accounts menu or update GITHUB_TOKEN.)';
+        case 403: return ' (Forbidden — the token lacks the "repo" scope, or you have hit a rate limit. Re-authorize with repo access.)';
+        case 404: return ' (Not found — the repository does not exist or your token cannot access it.)';
+        case 422: return ' (Unprocessable — often "no commits between base and head" or a PR already exists for this branch.)';
+        default:  return '';
+    }
+}
+
 export class GitHubScmProvider implements ScmProvider {
     readonly name = 'GitHub';
     constructor(private readonly token: string) {}
@@ -53,7 +64,7 @@ export class GitHubScmProvider implements ScmProvider {
         if (j.errors?.length) {
             msg += ` — ${j.errors.map(e => e.message || e.code || e.field || JSON.stringify(e)).join('; ')}`;
         }
-        throw new Error(msg);
+        throw new Error(msg + ghHint(statusCode));
     }
 
     async findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<PrResult | null> {
@@ -80,7 +91,21 @@ export class GitHubScmProvider implements ScmProvider {
         if (statusCode === 200 && j.html_url && j.number) {
             return { url: j.html_url, number: j.number };
         }
-        throw new Error(j.message || `GitHub API error ${statusCode}`);
+        throw new Error((j.message || `GitHub API error ${statusCode}`) + ghHint(statusCode));
+    }
+
+    async postPrComment(payload: { owner: string; repo: string; number: number; body: string }): Promise<{ url: string }> {
+        const { owner, repo, number, body } = payload;
+        const reqBody = JSON.stringify({ body });
+        const { statusCode, json } = await ghRequest(
+            { path: `/repos/${enc(owner)}/${enc(repo)}/issues/${number}/comments`, method: 'POST', headers: { 'Content-Type': 'application/json' } },
+            this.token, reqBody
+        );
+        const j = json as { html_url?: string; message?: string };
+        if (statusCode === 201 && j.html_url) {
+            return { url: j.html_url };
+        }
+        throw new Error((j.message || `GitHub API error ${statusCode}`) + ghHint(statusCode));
     }
 }
 

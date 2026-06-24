@@ -20,4 +20,8 @@ export class GitLabScmProvider implements ScmProvider {
     async updatePr(_payload: PrPayload & { number: number }): Promise<PrResult> {
         throw new Error('GitLab MR update is not yet implemented in PR Forge.');
     }
+
+    async postPrComment(_payload: { owner: string; repo: string; number: number; body: string }): Promise<{ url: string }> {
+        throw new Error('GitLab comment posting is not yet implemented in PR Forge.');
+    }
 }
