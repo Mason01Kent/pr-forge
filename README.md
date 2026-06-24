@@ -40,7 +40,7 @@ cd extensions/pr-forge
 npm ci
 npm run compile
 npx vsce package --no-dependencies
-code --install-extension pr-forge-0.6.9.vsix
+code --install-extension pr-forge-0.6.10.vsix
 ```
 
 Or use the Extensions panel and choose `Install from VSIX...`.
@@ -56,6 +56,8 @@ Or use the Extensions panel and choose `Install from VSIX...`.
 > The model dropdown, Run Tests toggle, and Include recent commits toggle are controlled directly from the sidebar.
 >
 > During generation, the sidebar stays on the tools view and shows an inline activity area with the current step, Cancel, and post-run action buttons. Use `Open Body File`, `Open Review File`, `Preview Body`, or `Preview Review` to switch modes.
+>
+> After a successful run, the sidebar also restores a generated-content card below Reset with the current title, last run time, and the same open/preview actions.
 
 ## Project Config
 
