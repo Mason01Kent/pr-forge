@@ -27,4 +27,13 @@ describe('parseRemote', () => {
   it('returns null for unsupported remotes', () => {
     assert.strictEqual(parseRemote('https://bitbucket.org/owner/repo.git', 'token'), null);
   });
+
+  it('returns a GitHub provider exposing the full SCM interface', () => {
+    const result = parseRemote('https://github.com/owner/repo.git', 'token');
+    assert.ok(result);
+    assert.strictEqual(result!.provider.name, 'GitHub');
+    for (const method of ['createPr', 'findOpenPr', 'updatePr', 'postPrComment'] as const) {
+      assert.strictEqual(typeof result!.provider[method], 'function', `missing ${method}`);
+    }
+  });
 });

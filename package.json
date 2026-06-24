@@ -123,8 +123,9 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
     "test": "node --loader ts-node/esm ./node_modules/mocha/bin/mocha --spec \"src/test/**/*.test.ts\"",
-    "package:vsix": "npx @vscode/vsce package",
-    "publish:vsce": "npx @vscode/vsce publish"
+    "package:vsix": "npx @vscode/vsce package --no-dependencies",
+    "publish:vsce": "npx @vscode/vsce publish --no-dependencies",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

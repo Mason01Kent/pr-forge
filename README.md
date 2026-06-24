@@ -9,6 +9,8 @@ AI-powered pull request title, description, and code review generator for VS Cod
 
 PR Forge turns your branch diff into a polished pull request title, description, and full code review, then submits the pull request to GitHub from a sidebar panel or the status bar.
 
+**The only VS Code extension that drafts your PR title + description, generates the review, and submits the PR — all with your own model and provider. No Copilot subscription, no per-seat fee — bring your own API key.**
+
 Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and **Ollama**.
 
 ## Features
@@ -21,10 +23,33 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 - **Model picker** - dropdown lists available models from your provider API and falls back to curated defaults if needed.
 - **Large-context mode** - Claude, GPT-4o, and DeepSeek can receive the full diff directly; chunked summarization is reserved for smaller models.
 - **Submit PR / Submit as Draft** - creates or updates the pull request on GitHub without leaving VS Code.
+- **Post Review to PR** - optionally post the generated review as a single comment on the submitted PR, using your existing GitHub sign-in (no Copilot, no extra cost).
 - **Cancellable generation** - cancel from the sidebar activity strip or the VS Code progress notification.
 - **Include recent commits** - optional workspace setting stored in `.pr-forge.json` controls whether recent commit messages are included.
 - **Multi-provider** - API keys are stored in VS Code SecretStorage, never in project files.
 - **Project type detection** - seeds sensible defaults for .NET, Node, React, and Python projects.
+
+## How PR Forge compares
+
+Most tools either *review* your PR or *manage* it. PR Forge is the only one that **authors the title and description, generates the review, and submits the PR** — with your own model.
+
+| | BYOK / multi-provider | Authors PR title + body | Generates review | Submits / updates PR | Price |
+|---|:---:|:---:|:---:|:---:|---|
+| **PR Forge** | ✅ | ✅ | ✅ | ✅ | **Free (BYOK)** |
+| GitHub Pull Requests (official) | ❌ | ❌ | ❌ | ✅ | Free |
+| GitHub Copilot PR features | ❌ (GPT only) | ✅ | ✅ | ❌ | Subscription |
+| BYOK review extensions | ✅ | ❌ | ✅ | ❌ | Subscription |
+
+Honest scope: PR Forge posts the review as a *single* PR comment (opt-in) or keeps it as a local file — per-line inline review comments are planned for a future release.
+
+## Support matrix
+
+| | Status |
+|---|---|
+| Submission host | **GitHub only** (GitLab/Bitbucket planned) |
+| VS Code | `^1.85.0` |
+| Tested providers | DeepSeek, OpenAI, Anthropic |
+| Best-effort providers | OpenRouter, Groq, Ollama |
 
 ## Install
 
@@ -87,7 +112,9 @@ PR Forge uses your VS Code GitHub sign-in, falling back to `GITHUB_TOKEN`, to su
 
 It will not generate on the base branch, and it prompts when config, API key, or git state is missing.
 
-GitHub is the supported submission target. GitLab remotes are detected, but Merge Request submission is not implemented yet.
+After a PR is submitted, **Post Review to PR** posts the generated review (`.pr/PR_REVIEW.md`) as a single comment on that PR. It uses the same GitHub token as submission — no Copilot and no extra cost.
+
+**GitHub is the only supported submission target in 1.0.** Non-GitHub remotes (including GitLab) are rejected with a clear message; GitLab Merge Request submission is planned for a future release.
 
 ## Development
 
@@ -100,13 +127,15 @@ npm run package:vsix
 
 `npm run build` runs TypeScript compile plus bundling. `npm run package:vsix` creates the release artifact with `vsce`.
 
-## Telemetry
+## Privacy & telemetry
 
-PR Forge collects anonymous usage data to improve the extension. No code, diffs, PR content, file paths, branch names, or API keys are collected.
+**Your code and keys stay yours.** API keys live in VS Code SecretStorage, never in project files. Your diff is sent only to the AI provider *you* configure — never to PR Forge's authors. The review and body are written locally; nothing is posted to GitHub unless you explicitly submit a PR or click **Post Review to PR**.
 
-Collected data includes activation events, feature usage, provider and model names, outcome, token counts, estimated cost, and broad error categories.
+PR Forge collects anonymous usage data to improve the extension. **Never collected:** code, diffs, PR content, file paths, branch names, or API keys.
 
-To opt out, disable `telemetry.telemetryLevel` in VS Code settings or set `"prForge.telemetry.enabled": false` in user settings.
+**Collected:** activation events, feature usage, provider and model names, outcome, token counts, estimated cost, and broad error categories.
+
+To opt out, disable `telemetry.telemetryLevel` in VS Code settings (turns off telemetry for all extensions) or set `"prForge.telemetry.enabled": false` in user settings.
 
 ## License
 
