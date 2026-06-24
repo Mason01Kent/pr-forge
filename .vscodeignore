@@ -5,6 +5,14 @@ node_modules/**
 out/**/*.map
 **/*.ts
 tsconfig.json
+tsconfig.test.json
 package-lock.json
 .gitignore
 .vscodeignore
+.eslintrc*
+eslint.config.js
+.mocharc.json
+.mocharc*
+AGENTS.md
+.github/**
+**/*.vsix

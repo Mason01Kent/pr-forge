@@ -53,6 +53,7 @@ type WebviewToExtMsg =
     | { command: 'copyPreviewTitle' }
     | { command: 'copyPreviewBody' }
     | { command: 'openPrUrl' }
+    | { command: 'postReview' }
     | { command: 'clearPr' }
     | { command: 'setModel'; model: string }
     | { command: 'setRunTests'; value: boolean }
@@ -83,6 +84,7 @@ export interface SidebarCallbacks {
     onCopyPreviewTitle: (title: string) => void;
     onCopyPreviewBody: () => void;
     onOpenPrUrl: () => void;
+    onPostReview: () => void;
     onClearPr: () => void;
     onCancel: () => void;
     onSetModel: (model: string) => void;
@@ -201,6 +203,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'openPrUrl':
                     this._callbacks.onOpenPrUrl();
+                    break;
+                case 'postReview':
+                    this._callbacks.onPostReview();
                     break;
                 case 'clearPr':
                     this._callbacks.onClearPr();
@@ -329,6 +334,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
   <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
   <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR on GitHub</span></button>
+  <button class="btn btn-secondary" id="btn-post-review" style="display:none">${ic.review}<span>Post Review to PR</span></button>
   <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
   </div>
 
@@ -388,7 +394,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-post-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -403,6 +409,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-generated-preview-review').addEventListener('click', () => vscode.postMessage({ command: 'openReviewPanel' }));
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-open-github').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
+  el('btn-post-review').addEventListener('click', () => vscode.postMessage({ command: 'postReview' }));
   el('btn-clear-pr').addEventListener('click', () => vscode.postMessage({ command: 'clearPr' }));
   el('btn-activity-cancel').addEventListener('click', () => vscode.postMessage({ command: 'cancel' }));
   el('model-select').addEventListener('change', (e) => vscode.postMessage({ command: 'setModel', model: e.target.value }));
@@ -574,6 +581,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-submit-draft-pr').title = _onBaseBranch ? 'Switch to a feature branch first' : (state.bodyExists ? '' : 'Generate a PR Body first');
     el('btn-clear-pr').style.display = state.bodyExists || state.reviewExists || state.lastRunStatus === 'error' ? '' : 'none';
     el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
+    el('btn-post-review').style.display = state.reviewExists && state.submittedPrUrl ? '' : 'none';
+    el('btn-post-review').title = 'Post the generated review as a comment on the submitted PR';
 
     const hasGeneratedContent = state.bodyExists || state.reviewExists;
     const generatedCard = el('generated-content-card');

@@ -1,7 +1,8 @@
 /**
  * SCM provider abstraction.
- * Each host (GitHub, GitLab, Bitbucket, Azure DevOps) implements ScmProvider.
- * The factory function `getScmProvider` picks the right impl from a remote URL.
+ * PR Forge 1.0 supports GitHub only. `GitLabScmProvider` is kept in the repo
+ * (src/scm/gitlab.ts) for a future release but is intentionally not wired into
+ * `parseRemote`, so non-GitHub remotes are rejected with a clear message.
  */
 
 export interface PrPayload {
@@ -29,13 +30,14 @@ export interface ScmProvider {
     findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<PrResult | null>;
     /** Update title and body of an existing PR. */
     updatePr(payload: PrPayload & { number: number }): Promise<PrResult>;
+    /** Post a plain comment on an existing PR/issue. Returns the comment URL. */
+    postPrComment(payload: { owner: string; repo: string; number: number; body: string }): Promise<{ url: string }>;
 }
 
 export { GitHubScmProvider } from './github';
-export { GitLabScmProvider } from './gitlab';
+// GitLabScmProvider is intentionally NOT re-exported or wired — GitHub-only in 1.0.
 
 import { GitHubScmProvider } from './github';
-import { GitLabScmProvider } from './gitlab';
 
 export interface ParsedRemote {
     owner: string;
@@ -45,7 +47,7 @@ export interface ParsedRemote {
 
 /**
  * Parse a git remote URL and return the owner/repo plus the matching ScmProvider.
- * Returns null if the URL is not a recognised SCM host.
+ * GitHub-only in 1.0 — returns null for any non-GitHub host (including GitLab).
  */
 export function parseRemote(remoteUrl: string, token: string): ParsedRemote | null {
     // GitHub HTTPS or SSH
@@ -56,16 +58,6 @@ export function parseRemote(remoteUrl: string, token: string): ParsedRemote | nu
     const ghSsh = remoteUrl.match(/^git@github\.com:([^/]+)\/([^/\s]+?)(?:\.git)?$/);
     if (ghSsh) {
         return { owner: ghSsh[1], repo: ghSsh[2], provider: new GitHubScmProvider(token) };
-    }
-
-    // GitLab HTTPS or SSH
-    const glHttps = remoteUrl.match(/^https?:\/\/gitlab\.com\/([^/]+)\/([^/\s]+?)(?:\.git)?$/);
-    if (glHttps) {
-        return { owner: glHttps[1], repo: glHttps[2], provider: new GitLabScmProvider(token) };
-    }
-    const glSsh = remoteUrl.match(/^git@gitlab\.com:([^/]+)\/([^/\s]+?)(?:\.git)?$/);
-    if (glSsh) {
-        return { owner: glSsh[1], repo: glSsh[2], provider: new GitLabScmProvider(token) };
     }
 
     return null;

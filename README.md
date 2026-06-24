@@ -41,7 +41,7 @@ cd extensions/pr-forge
 npm ci
 npm run compile
 npx vsce package --no-dependencies
-code --install-extension pr-forge-0.6.13.vsix
+code --install-extension pr-forge-1.0.0.vsix
 ```
 
 Or use the Extensions panel and choose `Install from VSIX...`.
