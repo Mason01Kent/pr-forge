@@ -44,15 +44,17 @@ body {
 /* ── Status Card ─────────────────────────────── */
 .card {
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.2));
-  padding: 0 12px;
+  padding: 0 clamp(6px, 4vw, 12px);
 }
 
 .card-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   min-height: 24px;
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.1));
+  min-width: 0;
 }
 
 .card-row:last-child {
@@ -62,8 +64,11 @@ body {
 .label {
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
-  min-width: 55px;
+  min-width: 0;
   flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .value {
@@ -73,7 +78,9 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 155px;
+  max-width: min(155px, 62%);
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /* ── Badges ──────────────────────────────────── */
@@ -84,6 +91,8 @@ body {
   border-radius: 10px;
   font-size: 11px;
   font-weight: 500;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .badge.ok {
@@ -103,8 +112,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 8px clamp(6px, 4vw, 12px);
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.15));
+  min-width: 0;
 }
 
 .section-label {
@@ -143,6 +153,13 @@ body {
   line-height: 1.2;
   transition: background 0.08s, filter 0.08s;
   flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -201,6 +218,7 @@ body {
 .btn-row {
   display: flex;
   gap: 4px;
+  min-width: 0;
 }
 .btn-row .btn {
   flex: 1;
@@ -247,19 +265,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-.activity-buttons {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.activity-buttons .btn {
-  padding: 3px 7px;
-  font-size: 11px;
-  flex: 1 1 0;
-  width: 100%;
-}
-
 .generated-content-card {
   gap: 6px;
 }
@@ -280,6 +285,20 @@ body {
 
 .generated-content-actions {
   gap: 4px;
+}
+
+@media (max-width: 250px) {
+  .btn-row {
+    flex-direction: column;
+  }
+
+  .btn {
+    justify-content: center;
+  }
+
+  .card-row {
+    gap: 5px;
+  }
 }
 
 .spinner {
