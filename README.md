@@ -3,6 +3,7 @@
 [![Version](https://img.shields.io/visual-studio-marketplace/v/masonkent.pr-forge)](https://marketplace.visualstudio.com/items?itemName=masonkent.pr-forge)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/masonkent.pr-forge)](https://marketplace.visualstudio.com/items?itemName=masonkent.pr-forge)
 [![License](https://img.shields.io/github/license/Mason01Kent/pr-forge)](https://github.com/Mason01Kent/pr-forge/blob/master/LICENSE)
+[![Releases](https://img.shields.io/github/v/release/Mason01Kent/pr-forge)](https://github.com/Mason01Kent/pr-forge/releases)
 
 AI-powered pull request title, description, and code review generator for VS Code.
 
@@ -40,7 +41,7 @@ cd extensions/pr-forge
 npm ci
 npm run compile
 npx vsce package --no-dependencies
-code --install-extension pr-forge-0.6.10.vsix
+code --install-extension pr-forge-0.6.12.vsix
 ```
 
 Or use the Extensions panel and choose `Install from VSIX...`.
