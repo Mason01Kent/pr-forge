@@ -131,19 +131,19 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 5px 10px;
+  padding: 4px 8px;
   border: none;
   border-radius: 4px;
   font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
+  font-size: 11px;
   cursor: pointer;
   width: 100%;
   min-width: 0;
   text-align: center;
-  line-height: 1.4;
+  line-height: 1.2;
   transition: background 0.08s, filter 0.08s;
-  flex-wrap: wrap;
-  overflow-wrap: anywhere;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .btn:focus-visible {
@@ -207,6 +207,11 @@ body {
   min-width: 0;
 }
 
+.btn-compact {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+
 /* ── Activity Area (progress + summary) ──────── */
 .activity-area {
   display: none;
@@ -249,10 +254,32 @@ body {
 }
 
 .activity-buttons .btn {
-  padding: 4px 8px;
+  padding: 3px 7px;
   font-size: 11px;
   flex: 1 1 0;
   width: 100%;
+}
+
+.generated-content-card {
+  gap: 6px;
+}
+
+.generated-content-summary {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+}
+
+.generated-content-status {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.generated-content-actions {
+  gap: 4px;
 }
 
 .spinner {

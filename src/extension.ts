@@ -34,12 +34,21 @@ interface GeneratedArtifacts {
     bodyExists: boolean;
     reviewExists: boolean;
     generatedTitle: string;
+    generatedTitleShort: string;
     lastGeneratedAt: string | null;
 }
 
 function normalizeGeneratedTitle(raw: string): string {
     const trimmed = raw.trim().replace(/\s+/g, ' ');
     return trimmed || 'PR Content';
+}
+
+function shortenGeneratedTitle(title: string, maxLength = 32): string {
+    const normalized = normalizeGeneratedTitle(title);
+    if (normalized.length <= maxLength) {
+        return normalized;
+    }
+    return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
 }
 
 function readGeneratedArtifacts(workspaceFolder: vscode.WorkspaceFolder, config: PrForgeConfig): GeneratedArtifacts {
@@ -60,6 +69,7 @@ function readGeneratedArtifacts(workspaceFolder: vscode.WorkspaceFolder, config:
             generatedTitle = 'PR Content';
         }
     }
+    const generatedTitleShort = shortenGeneratedTitle(generatedTitle);
 
     const mtimes = [
         titleExists ? fs.statSync(titlePath).mtime : null,
@@ -70,7 +80,7 @@ function readGeneratedArtifacts(workspaceFolder: vscode.WorkspaceFolder, config:
         ? mtimes.reduce((latest, current) => current > latest ? current : latest).toLocaleTimeString()
         : null;
 
-    return { titleExists, bodyExists, reviewExists, generatedTitle, lastGeneratedAt };
+    return { titleExists, bodyExists, reviewExists, generatedTitle, generatedTitleShort, lastGeneratedAt };
 }
 
 function readPreviewContentFromDisk(
@@ -185,6 +195,7 @@ function updateArtifactState(workspaceFolder: vscode.WorkspaceFolder, config: Pr
         bodyExists: artifacts.bodyExists,
         reviewExists: artifacts.reviewExists,
         generatedTitle: artifacts.generatedTitle,
+        generatedTitleShort: artifacts.generatedTitleShort,
         lastGeneratedAt: artifacts.lastGeneratedAt,
         prBodyReady: artifacts.bodyExists,
         prReviewReady: artifacts.reviewExists,
@@ -210,6 +221,7 @@ async function refreshWorkspaceState(): Promise<void> {
             bodyExists: false,
             reviewExists: false,
             generatedTitle: 'PR Content',
+            generatedTitleShort: 'PR Content',
             lastGeneratedAt: null,
             prBodyReady: false,
             prReviewReady: false,
@@ -240,6 +252,7 @@ async function refreshWorkspaceState(): Promise<void> {
             bodyExists: false,
             reviewExists: false,
             generatedTitle: 'PR Content',
+            generatedTitleShort: 'PR Content',
             lastGeneratedAt: null,
             prBodyReady: false,
             prReviewReady: false,
@@ -356,6 +369,7 @@ async function clearPrOutput(): Promise<void> {
         bodyExists: false,
         reviewExists: false,
         generatedTitle: 'PR Content',
+        generatedTitleShort: 'PR Content',
         lastGeneratedAt: null,
     });
     log('PR draft cleared.');
