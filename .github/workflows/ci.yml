@@ -41,6 +41,20 @@ jobs:
         working-directory: extensions/pr-forge
         run: npx vsce package --no-dependencies
 
+      - name: Verify package hygiene
+        working-directory: extensions/pr-forge
+        run: |
+          FILES="$(npx vsce ls --no-dependencies)"
+          echo "$FILES"
+          for f in AGENTS.md eslint.config.js .mocharc.json tsconfig.test.json; do
+            if echo "$FILES" | grep -qx "$f"; then
+              echo "::error::Dev-only file '$f' leaked into the VSIX"; exit 1
+            fi
+          done
+          if echo "$FILES" | grep -qE '\.ts$|\.map$'; then
+            echo "::error::Source or map files leaked into the VSIX"; exit 1
+          fi
+
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
