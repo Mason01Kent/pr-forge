@@ -362,10 +362,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <button class="btn btn-secondary" id="btn-activity-cancel" style="display:none">Cancel</button>
     <div class="activity-summary" id="activity-summary" style="display:none">
       <div class="activity-summary-line"><span id="activity-status"></span></div>
-      <div class="activity-buttons">
-        <button class="btn btn-secondary" id="btn-activity-view-body" style="display:none">${ic.preview}<span>Preview Body</span></button>
-        <button class="btn btn-secondary" id="btn-activity-view-review" style="display:none">${ic.review}<span>Preview Review</span></button>
-      </div>
     </div>
   </div>
 </div>
@@ -421,9 +417,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-open-github').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-clear-pr').addEventListener('click', () => vscode.postMessage({ command: 'clearPr' }));
   el('btn-activity-cancel').addEventListener('click', () => vscode.postMessage({ command: 'cancel' }));
-  el('btn-activity-view-body').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
-  el('btn-activity-view-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
-
   el('model-select').addEventListener('change', (e) => vscode.postMessage({ command: 'setModel', model: e.target.value }));
   el('chk-run-tests').addEventListener('change', (e) => {
     el('run-tests-label').textContent = e.target.checked ? 'On' : 'Off';
@@ -467,8 +460,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const cancel = el('btn-activity-cancel');
     const step = el('activity-step');
     const status = el('activity-status');
-    const bodyBtn = el('btn-activity-view-body');
-    const reviewBtn = el('btn-activity-view-review');
 
     const hasSuccess = !state.isRunning && state.lastRunStatus === 'success' && (state.bodyExists || state.reviewExists);
     const hasError = !state.isRunning && state.lastRunStatus === 'error';
@@ -481,29 +472,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     if (state.isRunning) {
       step.textContent = state.generationStep || (state.generationKind === 'prReview' ? 'Generating PR review...' : 'Generating PR body...');
-      bodyBtn.style.display = 'none';
-      reviewBtn.style.display = 'none';
       return;
     }
 
     if (hasSuccess) {
-      const title = state.generatedTitleShort || state.generatedTitle || 'PR Content';
-      status.textContent = '✓ ' + title + ' · ' + (state.lastGeneratedAt || state.lastRunTimestamp || '');
-      bodyBtn.style.display = state.bodyExists ? '' : 'none';
-      reviewBtn.style.display = state.reviewExists ? '' : 'none';
+      status.textContent = '✓ ' + (state.lastRunTimestamp || state.lastGeneratedAt || '');
       return;
     }
 
     if (hasError) {
       status.textContent = '✕ Generation failed';
-      bodyBtn.style.display = 'none';
-      reviewBtn.style.display = 'none';
       return;
     }
 
     status.textContent = '';
-    bodyBtn.style.display = 'none';
-    reviewBtn.style.display = 'none';
   }
 
   function applyState(state) {
@@ -550,10 +532,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     if (state.lastGeneratedAt || state.lastRunTimestamp) {
-      const label = state.generatedTitleShort || state.generatedTitle || 'PR Content';
-      const icon = state.lastRunStatus === 'success' ? '✓' : '✕';
       const ts = state.lastGeneratedAt || state.lastRunTimestamp;
-      el('last-run-info').textContent = icon + ' ' + label + ' · ' + ts;
+      const icon = state.lastRunStatus === 'success' ? '✓' : '✕';
+      el('last-run-info').textContent = icon + ' ' + ts;
       el('last-run-row').style.display = '';
     } else {
       el('last-run-row').style.display = 'none';
