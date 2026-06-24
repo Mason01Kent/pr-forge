@@ -326,14 +326,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="section">
-    <div class="btn-row">
-    <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>Open Body File</span></button>
-    <button class="btn btn-secondary" id="btn-view-review" disabled>${ic.review}<span>Open Review File</span></button>
-  </div>
-  <div class="btn-row" style="margin-top: 8px;">
-    <button class="btn btn-secondary" id="btn-open-summary" disabled>${ic.preview}<span>Preview Body</span></button>
-    <button class="btn btn-secondary" id="btn-open-review" disabled>${ic.review}<span>Preview Review</span></button>
-  </div>
   <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
   <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
   <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR on GitHub</span></button>
@@ -396,7 +388,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-view-review','btn-open-summary','btn-open-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -405,10 +397,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-pr-review').addEventListener('click', () => vscode.postMessage({ command: 'generatePrReview' }));
   el('btn-submit-pr').addEventListener('click', () => vscode.postMessage({ command: 'submitPr' }));
   el('btn-submit-draft-pr').addEventListener('click', () => vscode.postMessage({ command: 'submitDraftPr' }));
-  el('btn-view-summary').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
-  el('btn-view-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
-  el('btn-open-summary').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));
-  el('btn-open-review').addEventListener('click', () => vscode.postMessage({ command: 'openReviewPanel' }));
   el('btn-generated-open-body').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
   el('btn-generated-open-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
   el('btn-generated-preview-body').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));
@@ -533,8 +521,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     if (state.lastGeneratedAt || state.lastRunTimestamp) {
       const ts = state.lastGeneratedAt || state.lastRunTimestamp;
-      const icon = state.lastRunStatus === 'success' ? '✓' : '✕';
-      el('last-run-info').textContent = icon + ' ' + ts;
+      el('last-run-info').textContent = ts;
       el('last-run-row').style.display = '';
     } else {
       el('last-run-row').style.display = 'none';
@@ -583,16 +570,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-pr-review').title = _onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR body and a code review of your diff.';
     el('btn-submit-pr').disabled = !canSubmit || !!state.isRunning;
     el('btn-submit-draft-pr').disabled = !canSubmit || !!state.isRunning;
-    el('btn-view-summary').disabled = !state.bodyExists || !!state.isRunning;
-    el('btn-view-review').disabled = !state.reviewExists || !!state.isRunning;
-    el('btn-open-summary').disabled = !state.bodyExists || !!state.isRunning;
-    el('btn-open-review').disabled = !state.reviewExists || !!state.isRunning;
     el('btn-submit-pr').title = _onBaseBranch ? 'Switch to a feature branch first' : (state.bodyExists ? '' : 'Generate a PR Body first');
     el('btn-submit-draft-pr').title = _onBaseBranch ? 'Switch to a feature branch first' : (state.bodyExists ? '' : 'Generate a PR Body first');
-    el('btn-view-summary').title = state.bodyExists ? 'Open the PR body file' : 'Generate a PR Body first';
-    el('btn-view-review').title = state.reviewExists ? 'Open the PR review file' : 'Generate a PR Review first';
-    el('btn-open-summary').title = state.bodyExists ? 'Preview the PR body' : 'Generate a PR Body first';
-    el('btn-open-review').title = state.reviewExists ? 'Preview the PR review' : 'Generate a PR Review first';
     el('btn-clear-pr').style.display = state.bodyExists || state.reviewExists || state.lastRunStatus === 'error' ? '' : 'none';
     el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
 
