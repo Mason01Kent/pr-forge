@@ -4,7 +4,7 @@ import { migrateConfig } from '../config';
 describe('migrateConfig', () => {
   it('sets schemaVersion to 2 when missing', () => {
     const result = migrateConfig({ projectName: 'test' });
-    assert.strictEqual(result.schemaVersion, 2);
+    assert.strictEqual(result.schemaVersion, 3);
   });
 
   it('sets runTestsOnGenerate to true when missing', () => {
@@ -12,9 +12,14 @@ describe('migrateConfig', () => {
     assert.strictEqual(result.runTestsOnGenerate, true);
   });
 
+  it('sets includeRecentCommits to false when missing', () => {
+    const result = migrateConfig({ schemaVersion: 2 });
+    assert.strictEqual(result.includeRecentCommits, false);
+  });
+
   it('preserves existing schemaVersion 2 fields', () => {
     const result = migrateConfig({ schemaVersion: 2, runTestsOnGenerate: false });
-    assert.strictEqual(result.schemaVersion, 2);
+    assert.strictEqual(result.schemaVersion, 3);
     assert.strictEqual(result.runTestsOnGenerate, false);
   });
 
@@ -26,13 +31,15 @@ describe('migrateConfig', () => {
 
   it('passes through all other fields unchanged', () => {
     const result = migrateConfig({
-      schemaVersion: 2,
+      schemaVersion: 3,
       projectName: 'my-app',
       baseBranch: 'develop',
       provider: 'anthropic',
+      includeRecentCommits: true,
     });
     assert.strictEqual(result.projectName, 'my-app');
     assert.strictEqual(result.baseBranch, 'develop');
     assert.strictEqual(result.provider, 'anthropic');
+    assert.strictEqual(result.includeRecentCommits, true);
   });
 });

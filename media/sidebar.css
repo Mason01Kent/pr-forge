@@ -138,10 +138,12 @@ body {
   font-size: var(--vscode-font-size);
   cursor: pointer;
   width: 100%;
+  min-width: 0;
   text-align: center;
   line-height: 1.4;
   transition: background 0.08s, filter 0.08s;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 
 .btn:focus-visible {
@@ -202,17 +204,55 @@ body {
 }
 .btn-row .btn {
   flex: 1;
+  min-width: 0;
 }
 
-/* ── Status / Progress Area ──────────────────── */
-.status-area {
+/* ── Activity Area (progress + summary) ──────── */
+.activity-area {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.15));
+}
+
+.activity-area.show {
+  display: flex;
+}
+
+.activity-running {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
   color: var(--vscode-descriptionForeground);
-  border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.15));
+}
+
+.activity-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.activity-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.activity-buttons {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.activity-buttons .btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  flex: 1 1 0;
+  width: 100%;
 }
 
 .spinner {
@@ -410,6 +450,10 @@ body {
   font-weight: 600;
   line-height: 1.3;
   color: var(--vscode-editor-foreground);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   word-break: break-word;
 }
 

@@ -7,7 +7,7 @@ import { PreviewPanel, PreviewContent } from './previewPanel';
 import { renderMarkdown } from './markdownRenderer';
 import { generatePr, regeneratePr, clearDiffCache } from './prGenerator';
 import { PrForgeConfig, migrateConfig } from './config';
-import { PROVIDERS, DEFAULT_MODELS, STATIC_MODELS, listModels, UsageStats } from './llmClient';
+import { PROVIDERS, DEFAULT_MODELS, UsageStats } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
 import { parseRemote } from './scm/index';
 import { initTelemetry, disposeTelemetry, telemetryEvent, telemetryError, classifyError } from './telemetry';
@@ -26,10 +26,138 @@ let provider: SidebarProvider;
 let lastPreviewMarkdown = '';
 let lastBodyContent: PreviewContent | undefined;
 let lastReviewContent: PreviewContent | undefined;
-let lastBodyWorkspacePath = '';
-let lastBodyOutputDir = '';
-let lastReviewWorkspacePath = '';
-let lastReviewOutputDir = '';
+let activeAbortController: AbortController | undefined;
+let workspaceWatchers: vscode.Disposable[] = [];
+
+interface GeneratedArtifacts {
+    titleExists: boolean;
+    bodyExists: boolean;
+    reviewExists: boolean;
+    generatedTitle: string;
+    lastGeneratedAt: string | null;
+}
+
+function normalizeGeneratedTitle(raw: string): string {
+    const trimmed = raw.trim().replace(/\s+/g, ' ');
+    return trimmed || 'PR Content';
+}
+
+function readGeneratedArtifacts(workspaceFolder: vscode.WorkspaceFolder, config: PrForgeConfig): GeneratedArtifacts {
+    const outputDir = path.join(workspaceFolder.uri.fsPath, config.outputDirectory);
+    const titlePath = path.join(outputDir, 'PR_TITLE.txt');
+    const bodyPath = path.join(outputDir, 'PR_BODY.md');
+    const reviewPath = path.join(outputDir, 'PR_REVIEW.md');
+
+    const titleExists = fs.existsSync(titlePath);
+    const bodyExists = fs.existsSync(bodyPath);
+    const reviewExists = fs.existsSync(reviewPath);
+
+    let generatedTitle = 'PR Content';
+    if (titleExists) {
+        try {
+            generatedTitle = normalizeGeneratedTitle(fs.readFileSync(titlePath, 'utf-8'));
+        } catch {
+            generatedTitle = 'PR Content';
+        }
+    }
+
+    const mtimes = [
+        titleExists ? fs.statSync(titlePath).mtime : null,
+        bodyExists ? fs.statSync(bodyPath).mtime : null,
+        reviewExists ? fs.statSync(reviewPath).mtime : null,
+    ].filter((value): value is Date => value !== null);
+    const lastGeneratedAt = mtimes.length > 0
+        ? mtimes.reduce((latest, current) => current > latest ? current : latest).toLocaleTimeString()
+        : null;
+
+    return { titleExists, bodyExists, reviewExists, generatedTitle, lastGeneratedAt };
+}
+
+function readPreviewContentFromDisk(
+    workspaceFolder: vscode.WorkspaceFolder,
+    config: PrForgeConfig,
+    kind: 'prBody' | 'prReview',
+    artifacts?: GeneratedArtifacts
+): PreviewContent | undefined {
+    const outputDir = path.join(workspaceFolder.uri.fsPath, config.outputDirectory);
+    const bodyPath = path.join(outputDir, kind === 'prBody' ? 'PR_BODY.md' : 'PR_REVIEW.md');
+    if (!fs.existsSync(bodyPath)) {
+        return undefined;
+    }
+
+    const body = fs.readFileSync(bodyPath, 'utf-8');
+    if (kind === 'prBody') {
+        const title = artifacts?.generatedTitle ?? (fs.existsSync(path.join(outputDir, 'PR_TITLE.txt'))
+            ? normalizeGeneratedTitle(fs.readFileSync(path.join(outputDir, 'PR_TITLE.txt'), 'utf-8'))
+            : 'PR Content');
+        return {
+            kind: 'prBody',
+            title,
+            body,
+            timestamp: fs.statSync(bodyPath).mtime.toLocaleTimeString(),
+            headBranch: getCurrentBranch(workspaceFolder.uri.fsPath) ?? undefined,
+            baseBranch: config.baseBranch,
+        };
+    }
+
+    return {
+        kind: 'prReview',
+        body,
+        timestamp: fs.statSync(bodyPath).mtime.toLocaleTimeString(),
+    };
+}
+
+function clearGenerationUiState(): void {
+    provider.updateState({ generationStep: null, generationKind: null });
+}
+
+async function openRenderedPreview(kind: 'prBody' | 'prReview'): Promise<void> {
+    const workspaceFolder = await resolveTargetProjectFolder();
+    if (!workspaceFolder) {
+        vscode.window.showErrorMessage('PR Forge: No workspace folder open.');
+        return;
+    }
+    const config = await ensureConfig(workspaceFolder);
+    if (!config) {
+        return;
+    }
+
+    const content = kind === 'prBody'
+        ? lastBodyContent ?? readPreviewContentFromDisk(workspaceFolder, config, 'prBody')
+        : lastReviewContent ?? readPreviewContentFromDisk(workspaceFolder, config, 'prReview');
+
+    if (!content) {
+        vscode.window.showErrorMessage(`PR Forge: Generate a PR ${kind === 'prBody' ? 'Body' : 'Review'} first.`);
+        return;
+    }
+
+    PreviewPanel.createOrShow(extensionUri, content, workspaceFolder.uri.fsPath, config.outputDirectory);
+}
+
+function cancelActiveGeneration(): void {
+    activeAbortController?.abort();
+}
+
+function notifyGenerationStep(step: string): void {
+    provider.notifyStep(step);
+}
+
+function logGenerationStep(msg: string): void {
+    log(msg);
+
+    const lower = msg.toLowerCase();
+    if (lower.includes('diff') || lower.includes('commit')) {
+        notifyGenerationStep('Reading diff and commits...');
+    } else if (lower.includes('test')) {
+        notifyGenerationStep('Running tests...');
+    } else if (lower.includes('title')) {
+        notifyGenerationStep('Generating PR title...');
+    } else if (lower.includes('review')) {
+        notifyGenerationStep('Generating PR review...');
+    } else if (lower.includes('body') || lower.includes('draft')) {
+        notifyGenerationStep('Generating PR body...');
+    }
+}
 
 function log(msg: string): void {
     outputChannel.appendLine(`[${new Date().toLocaleTimeString()}] ${msg}`);
@@ -40,6 +168,85 @@ function logUsage(usage: UsageStats): void {
         ? ` | est. cost $${usage.estimatedCostUsd.toFixed(4)}`
         : '';
     log(`Tokens: ${usage.inputTokens.toLocaleString()} in, ${usage.outputTokens.toLocaleString()} out${cost}`);
+}
+
+function updateArtifactState(workspaceFolder: vscode.WorkspaceFolder, config: PrForgeConfig): void {
+    const artifacts = readGeneratedArtifacts(workspaceFolder, config);
+    const outputDir = path.join(workspaceFolder.uri.fsPath, config.outputDirectory);
+    const bodyContent = artifacts.bodyExists ? readPreviewContentFromDisk(workspaceFolder, config, 'prBody', artifacts) : undefined;
+    const reviewContent = artifacts.reviewExists ? readPreviewContentFromDisk(workspaceFolder, config, 'prReview', artifacts) : undefined;
+
+    lastBodyContent = bodyContent;
+    lastReviewContent = reviewContent;
+    lastPreviewMarkdown = bodyContent?.body ?? reviewContent?.body ?? '';
+
+    provider.updateState({
+        titleExists: artifacts.titleExists,
+        bodyExists: artifacts.bodyExists,
+        reviewExists: artifacts.reviewExists,
+        generatedTitle: artifacts.generatedTitle,
+        lastGeneratedAt: artifacts.lastGeneratedAt,
+        prBodyReady: artifacts.bodyExists,
+        prReviewReady: artifacts.reviewExists,
+        previewTitle: artifacts.bodyExists ? artifacts.generatedTitle : null,
+        previewBody: bodyContent ? renderMarkdown(bodyContent.body) : reviewContent ? renderMarkdown(reviewContent.body) : null,
+    });
+    log(`Refreshed generated artifacts from ${outputDir}`);
+}
+
+async function refreshWorkspaceState(): Promise<void> {
+    const wf = getWorkspaceFolderWithConfig();
+    if (!wf) {
+        return;
+    }
+    const cfg = readConfig(wf);
+    if (!cfg) {
+        provider.updateState({
+            configExists: false,
+            projectName: wf.name,
+            currentBranch: getCurrentBranch(wf.uri.fsPath),
+            baseBranch: null,
+            titleExists: false,
+            bodyExists: false,
+            reviewExists: false,
+            generatedTitle: 'PR Content',
+            lastGeneratedAt: null,
+            prBodyReady: false,
+            prReviewReady: false,
+            previewTitle: null,
+            previewBody: null,
+        });
+        return;
+    }
+    const branch = getCurrentBranch(wf.uri.fsPath);
+    const keySet = await hasApiKey(extensionContext, cfg.provider);
+    provider.updateState({
+        configExists: true,
+        projectName: cfg.projectName,
+        provider: cfg.provider,
+        providerKeySet: keySet,
+        currentBranch: branch,
+        baseBranch: cfg.baseBranch,
+        currentModel: cfg.defaultModel,
+        runTestsOnGenerate: cfg.runTestsOnGenerate ?? true,
+        includeRecentCommits: cfg.includeRecentCommits ?? false,
+    });
+    const hasArtifacts = fs.existsSync(path.join(wf.uri.fsPath, cfg.outputDirectory, 'PR_BODY.md')) || fs.existsSync(path.join(wf.uri.fsPath, cfg.outputDirectory, 'PR_REVIEW.md'));
+    if (hasArtifacts) {
+        updateArtifactState(wf, cfg);
+    } else {
+        provider.updateState({
+            titleExists: false,
+            bodyExists: false,
+            reviewExists: false,
+            generatedTitle: 'PR Content',
+            lastGeneratedAt: null,
+            prBodyReady: false,
+            prReviewReady: false,
+            previewTitle: null,
+            previewBody: null,
+        });
+    }
 }
 
 async function withStatusBarSpinner(
@@ -116,55 +323,6 @@ async function ensureConfig(workspaceFolder: vscode.WorkspaceFolder): Promise<Pr
  * Check the output directory for previously generated PR files and restore
  * sidebar state so "last run" info and preview content survive extension restarts.
  */
-async function restoreOutputState(workspaceFolder: vscode.WorkspaceFolder, config: PrForgeConfig): Promise<void> {
-    const outputDir = path.join(workspaceFolder.uri.fsPath, config.outputDirectory);
-    const titlePath = path.join(outputDir, 'PR_TITLE.txt');
-    const bodyPath  = path.join(outputDir, 'PR_BODY.md');
-    const reviewPath = path.join(outputDir, 'PR_REVIEW.md');
-
-    if (!fs.existsSync(bodyPath)) {
-        return; // nothing to restore
-    }
-
-    const title = fs.existsSync(titlePath) ? fs.readFileSync(titlePath, 'utf-8').trim() : '';
-    const body  = fs.readFileSync(bodyPath, 'utf-8');
-    const reviewExists = fs.existsSync(reviewPath);
-
-    // Use the most recent file's mtime as the "last run" timestamp
-    const bodyTime = fs.statSync(bodyPath).mtime;
-    const reviewTime = reviewExists ? fs.statSync(reviewPath).mtime : new Date(0);
-    const mostRecent = bodyTime > reviewTime ? bodyTime : reviewTime;
-
-    lastPreviewMarkdown = body;
-
-    const timestamp = mostRecent.toLocaleTimeString();
-    const lastRunType: 'prBody' | 'prReview' = reviewExists && reviewTime >= bodyTime ? 'prReview' : 'prBody';
-
-    if (reviewExists) {
-        const reviewBody = fs.readFileSync(reviewPath, 'utf-8');
-        lastReviewContent = { kind: 'prReview', body: reviewBody, timestamp: mostRecent.toLocaleTimeString() };
-        lastReviewWorkspacePath = workspaceFolder.uri.fsPath;
-        lastReviewOutputDir = config.outputDirectory;
-    }
-    lastBodyContent = { kind: 'prBody', title, body, timestamp: bodyTime.toLocaleTimeString(), baseBranch: config.baseBranch };
-    lastBodyWorkspacePath = workspaceFolder.uri.fsPath;
-    lastBodyOutputDir = config.outputDirectory;
-
-    provider.updateState({
-        prBodyReady: true,
-        prReviewReady: reviewExists,
-        lastRunType,
-        lastRunStatus: 'success',
-        lastRunTimestamp: timestamp,
-        viewMode: 'tools',
-        previewKind: lastRunType,
-        previewTitle: title || null,
-        previewBody: renderMarkdown(lastRunType === 'prReview' ? fs.readFileSync(reviewPath, 'utf-8') : body),
-    });
-
-    log(`Restored output state from ${outputDir} (${lastRunType}, ${timestamp})`);
-}
-
 async function clearPrOutput(): Promise<void> {
     const wf = getWorkspaceFolderWithConfig();
     if (!wf) return;
@@ -186,12 +344,19 @@ async function clearPrOutput(): Promise<void> {
         lastRunType: null,
         lastRunStatus: null,
         lastRunTimestamp: null,
+        generationStep: null,
+        generationKind: null,
         previewTitle: null,
         previewBody: null,
         submittedPrNumber: null,
         submittedPrUrl: null,
         submittedPrTimestamp: null,
         viewMode: 'tools',
+        titleExists: false,
+        bodyExists: false,
+        reviewExists: false,
+        generatedTitle: 'PR Content',
+        lastGeneratedAt: null,
     });
     log('PR draft cleared.');
 }
@@ -242,8 +407,8 @@ async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder):
         ? ['authentication', 'authorization', 'ownership isolation', 'PostgreSQL migrations', 'decimal money handling', 'inventory transactions', 'refunds', 'production readiness', 'config/secrets safety']
         : ['security', 'tests', 'configuration', 'data integrity', 'deployment risk'];
     const config: PrForgeConfig = {
-        schemaVersion: 2, projectName, baseBranch: 'main', projectType,
-        testCommand: testCommands[projectType] || '', runTestsOnGenerate: true,
+        schemaVersion: 3, projectName, baseBranch: 'main', projectType,
+        testCommand: testCommands[projectType] || '', runTestsOnGenerate: true, includeRecentCommits: false,
         outputDirectory: '.pr',
         provider: 'deepseek', defaultModel: 'deepseek-chat',
         reviewRulesFiles, prRiskAreas,
@@ -291,14 +456,12 @@ async function generatePrBody(): Promise<void> {
 
     outputChannel.show(true);
     provider.notifyRunStart('prBody');
-    // Switch sidebar to preview immediately so streaming tokens appear live
-    provider.updateState({ viewMode: 'preview', previewKind: 'prBody', previewTitle: null, previewBody: '' });
     vscode.commands.executeCommand('workbench.view.extension.prForge');
 
     const abortController = new AbortController();
-    let throttleTimer: ReturnType<typeof setTimeout> | undefined;
-    let accumulatedBody = '';
+    activeAbortController = abortController;
     const t0 = Date.now();
+    notifyGenerationStep('Reading diff and commits...');
 
     const success = await withStatusBarSpinner(statusBarPrBody, '$(git-pull-request) PR Body', async () => {
         try {
@@ -309,6 +472,7 @@ async function generatePrBody(): Promise<void> {
                     return generatePr({
                         workspacePath: workspaceFolder.uri.fsPath,
                         baseBranch: config.baseBranch,
+                        includeRecentCommits: config.includeRecentCommits ?? false,
                         outputDirectory: config.outputDirectory,
                         projectName: config.projectName,
                         prRiskAreas: config.prRiskAreas,
@@ -318,44 +482,25 @@ async function generatePrBody(): Promise<void> {
                         runTests: config.runTestsOnGenerate ?? true,
                         generateReview: false,
                         llm: { provider: config.provider, apiKey, model: config.defaultModel },
-                        onLog: (msg) => log(msg),
+                        onLog: (msg) => logGenerationStep(msg),
                         signal: abortController.signal,
-                        onToken: (delta) => {
-                            accumulatedBody += delta;
-                            if (throttleTimer) { return; }
-                            throttleTimer = setTimeout(() => {
-                                throttleTimer = undefined;
-                                provider.updateState({ previewBody: renderMarkdown(accumulatedBody) });
-                            }, 100);
-                        },
                     });
                 }
             );
-            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             logUsage(result.usage);
             telemetryEvent('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             const previewContent: PreviewContent = { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch };
             lastBodyContent = previewContent;
-            lastBodyWorkspacePath = workspaceFolder.uri.fsPath;
-            lastBodyOutputDir = config.outputDirectory;
             PreviewPanel.createOrShow(extensionUri, previewContent, workspaceFolder.uri.fsPath, config.outputDirectory);
             lastPreviewMarkdown = result.body;
-            provider.updateState({
-                viewMode: 'preview',
-                previewKind: 'prBody',
-                previewTitle: result.title,
-                previewBody: renderMarkdown(result.body),
-                prBodyReady: true,
-            });
+            updateArtifactState(workspaceFolder, config);
             return true;
         } catch (err: unknown) {
-            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             const msg = err instanceof Error ? err.message : String(err);
             const kind = classifyError(err);
             if (kind === 'cancelled') {
                 telemetryEvent('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'cancelled' }, { durationMs: Date.now() - t0 });
                 log('Generation cancelled.');
-                provider.updateState({ viewMode: 'tools' });
                 return false;
             }
             telemetryError('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'error', errorKind: kind }, { durationMs: Date.now() - t0 });
@@ -364,7 +509,11 @@ async function generatePrBody(): Promise<void> {
             return false;
         }
     });
+    activeAbortController = undefined;
     provider.notifyRunEnd('prBody', success);
+    if (!success) {
+        clearGenerationUiState();
+    }
     provider.updateState({ configExists: true, projectName: config.projectName, provider: config.provider, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
     hasApiKey(extensionContext, config.provider).then(keySet => provider.updateState({ providerKeySet: keySet }));
 }
@@ -393,13 +542,12 @@ async function generatePrReview(): Promise<void> {
 
     outputChannel.show(true);
     provider.notifyRunStart('prReview');
-    provider.updateState({ viewMode: 'preview', previewKind: 'prReview', previewTitle: null, previewBody: '' });
     vscode.commands.executeCommand('workbench.view.extension.prForge');
 
     const abortController = new AbortController();
-    let throttleTimer: ReturnType<typeof setTimeout> | undefined;
-    let accumulatedReview = '';
+    activeAbortController = abortController;
     const t0 = Date.now();
+    notifyGenerationStep('Reading diff and commits...');
 
     const success = await withStatusBarSpinner(statusBarPrReview, '$(comment-discussion) PR Review', async () => {
         try {
@@ -410,6 +558,7 @@ async function generatePrReview(): Promise<void> {
                     return generatePr({
                         workspacePath: workspaceFolder.uri.fsPath,
                         baseBranch: config.baseBranch,
+                        includeRecentCommits: config.includeRecentCommits ?? false,
                         outputDirectory: config.outputDirectory,
                         projectName: config.projectName,
                         prRiskAreas: config.prRiskAreas,
@@ -419,46 +568,27 @@ async function generatePrReview(): Promise<void> {
                         runTests: config.runTestsOnGenerate ?? true,
                         generateReview: true,
                         llm: { provider: config.provider, apiKey, model: config.defaultModel },
-                        onLog: (msg) => log(msg),
+                        onLog: (msg) => logGenerationStep(msg),
                         signal: abortController.signal,
-                        onToken: (delta) => {
-                            accumulatedReview += delta;
-                            if (throttleTimer) { return; }
-                            throttleTimer = setTimeout(() => {
-                                throttleTimer = undefined;
-                                provider.updateState({ previewBody: renderMarkdown(accumulatedReview) });
-                            }, 100);
-                        },
                     });
                 }
             );
-            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             logUsage(result.usage);
             telemetryEvent('generate.prReview', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             if (result.review) {
                 const reviewContent: PreviewContent = { kind: 'prReview', body: result.review, timestamp: new Date().toLocaleString() };
                 lastReviewContent = reviewContent;
-                lastReviewWorkspacePath = workspaceFolder.uri.fsPath;
-                lastReviewOutputDir = config.outputDirectory;
                 PreviewPanel.createOrShow(extensionUri, reviewContent, workspaceFolder.uri.fsPath, config.outputDirectory);
                 lastPreviewMarkdown = result.review;
-                provider.updateState({ prReviewReady: true });
-                provider.updateState({
-                    viewMode: 'preview',
-                    previewKind: 'prReview',
-                    previewTitle: null,
-                    previewBody: renderMarkdown(result.review),
-                });
+                updateArtifactState(workspaceFolder, config);
             }
             return true;
         } catch (err: unknown) {
-            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             const msg = err instanceof Error ? err.message : String(err);
             const kind = classifyError(err);
             if (kind === 'cancelled') {
                 telemetryEvent('generate.prReview', { provider: config.provider, model: config.defaultModel, outcome: 'cancelled' }, { durationMs: Date.now() - t0 });
                 log('Generation cancelled.');
-                provider.updateState({ viewMode: 'tools' });
                 return false;
             }
             telemetryError('generate.prReview', { provider: config.provider, model: config.defaultModel, outcome: 'error', errorKind: kind }, { durationMs: Date.now() - t0 });
@@ -467,7 +597,11 @@ async function generatePrReview(): Promise<void> {
             return false;
         }
     });
+    activeAbortController = undefined;
     provider.notifyRunEnd('prReview', success);
+    if (!success) {
+        clearGenerationUiState();
+    }
     provider.updateState({ configExists: true, projectName: config.projectName, provider: config.provider, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
     hasApiKey(extensionContext, config.provider).then(keySet => provider.updateState({ providerKeySet: keySet }));
 }
@@ -488,11 +622,10 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
 
     outputChannel.show(true);
     provider.notifyRunStart('prBody');
-    provider.updateState({ viewMode: 'preview', previewKind: 'prBody', previewBody: '' });
+    notifyGenerationStep('Generating PR body...');
 
     const abortController = new AbortController();
-    let throttleTimer: ReturnType<typeof setTimeout> | undefined;
-    let accumulatedBody = '';
+    activeAbortController = abortController;
     const t0 = Date.now();
 
     const success = await withStatusBarSpinner(statusBarPrBody, '$(git-pull-request) PR Body', async () => {
@@ -504,6 +637,7 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
                     return regeneratePr({
                         workspacePath: workspaceFolder.uri.fsPath,
                         baseBranch: config.baseBranch,
+                        includeRecentCommits: config.includeRecentCommits ?? false,
                         outputDirectory: config.outputDirectory,
                         projectName: config.projectName,
                         prRiskAreas: config.prRiskAreas,
@@ -513,39 +647,22 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
                         runTests: false,
                         generateReview: false,
                         llm: { provider: config.provider, apiKey, model: config.defaultModel },
-                        onLog: (msg) => log(msg),
+                        onLog: (msg) => logGenerationStep(msg),
                         signal: abortController.signal,
-                        onToken: (delta) => {
-                            accumulatedBody += delta;
-                            if (throttleTimer) { return; }
-                            throttleTimer = setTimeout(() => {
-                                throttleTimer = undefined;
-                                provider.updateState({ previewBody: renderMarkdown(accumulatedBody) });
-                            }, 100);
-                        },
                     }, previousDraft, instruction);
                 }
             );
-            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             logUsage(result.usage);
             telemetryEvent('regenerate', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             lastPreviewMarkdown = result.body;
-            provider.updateState({
-                viewMode: 'preview',
-                previewKind: 'prBody',
-                previewTitle: result.title,
-                previewBody: renderMarkdown(result.body),
-                prBodyReady: true,
-            });
+            updateArtifactState(workspaceFolder, config);
             return true;
         } catch (err: unknown) {
-            if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = undefined; }
             const msg = err instanceof Error ? err.message : String(err);
             const kind = classifyError(err);
             if (kind === 'cancelled') {
                 telemetryEvent('regenerate', { provider: config.provider, model: config.defaultModel, outcome: 'cancelled' }, { durationMs: Date.now() - t0 });
                 log('Regeneration cancelled.');
-                provider.updateState({ viewMode: 'preview' });
                 return false;
             }
             telemetryError('regenerate', { provider: config.provider, model: config.defaultModel, outcome: 'error', errorKind: kind }, { durationMs: Date.now() - t0 });
@@ -554,6 +671,7 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
             return false;
         }
     });
+    activeAbortController = undefined;
     provider.notifyRunEnd('prBody', success);
 }
 
@@ -573,6 +691,7 @@ async function setApiKey(): Promise<void> {
         const keySet = await hasApiKey(extensionContext, result);
         provider.updateState({ provider: result, providerKeySet: keySet });
         telemetryEvent('setApiKey', { provider: result });
+        void refreshWorkspaceState();
     }
 }
 
@@ -623,6 +742,10 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     const remote = parseRemote(remoteUrl, token!);
     if (!remote) {
         vscode.window.showErrorMessage(`PR Forge: Remote URL not recognised as a supported SCM host: ${remoteUrl}`);
+        return;
+    }
+    if (remote.provider.name === 'GitLab') {
+        vscode.window.showErrorMessage('PR Forge: GitLab remote detected, but Merge Request submission is not implemented yet. Use GitHub for PR submission.');
         return;
     }
 
@@ -761,39 +884,6 @@ function getCurrentBranch(workspacePath: string): string | null {
     }
 }
 
-async function refreshSidebarState(context: vscode.ExtensionContext): Promise<void> {
-    const wf = getWorkspaceFolderWithConfig();
-    if (!wf) return;
-    const cfg = readConfig(wf);
-    const branch = getCurrentBranch(wf.uri.fsPath);
-    if (cfg) {
-        const keySet = await hasApiKey(context, cfg.provider);
-        const onBase = branch !== null && branch === cfg.baseBranch;
-        const staticModels = STATIC_MODELS[cfg.provider] ?? [];
-        const immediateModels = staticModels.includes(cfg.defaultModel)
-            ? staticModels
-            : [cfg.defaultModel, ...staticModels].filter(Boolean);
-        provider.updateState({
-            configExists: true, projectName: cfg.projectName, provider: cfg.provider,
-            providerKeySet: keySet, currentBranch: branch, baseBranch: cfg.baseBranch,
-            currentModel: cfg.defaultModel, runTestsOnGenerate: cfg.runTestsOnGenerate ?? true,
-            availableModels: immediateModels,
-        });
-        // Fetch live models in the background and update the dropdown when ready
-        const apiKey = (await getApiKey(context, cfg.provider)) ?? '';
-        listModels({ provider: cfg.provider, apiKey, model: cfg.defaultModel })
-            .then(models => provider.updateState({ availableModels: models, currentModel: cfg.defaultModel }))
-            .catch(() => { /* non-fatal */ });
-        if (onBase) {
-            provider.updateState({ prBodyReady: false, lastRunType: null, lastRunStatus: null, lastRunTimestamp: null, previewTitle: null, previewBody: null });
-        } else {
-            await restoreOutputState(wf, cfg);
-        }
-    } else {
-        provider.updateState({ configExists: false, projectName: wf.name, currentBranch: branch, baseBranch: null, availableModels: [] });
-    }
-}
-
 export function activate(context: vscode.ExtensionContext): void {
     extensionUri = context.extensionUri;
     extensionContext = context;
@@ -831,10 +921,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
     provider = new SidebarProvider(extensionUri, {
         onReady: async () => {
-            await refreshSidebarState(context);
+            await refreshWorkspaceState();
             // Retry once after a short delay — workspace folders may not be
             // fully resolved when the webview fires ready on first load.
-            setTimeout(() => refreshSidebarState(context), 1500);
+            setTimeout(() => { void refreshWorkspaceState(); }, 1500);
         },
         onInitConfig: async () => {
             const wf = await resolveTargetProjectFolder();
@@ -844,6 +934,7 @@ export function activate(context: vscode.ExtensionContext): void {
                 if (cfg) {
                     const keySet = await hasApiKey(context, cfg.provider);
                     provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet });
+                    void refreshWorkspaceState();
                 } else {
                     provider.updateState({ configExists: false, projectName: wf.name });
                 }
@@ -859,16 +950,26 @@ export function activate(context: vscode.ExtensionContext): void {
             provider.updateState({ viewMode: 'tools' });
         },
         onShowPreview: () => {
-            if (lastBodyContent) {
-                PreviewPanel.createOrShow(extensionUri, lastBodyContent, lastBodyWorkspacePath, lastBodyOutputDir);
-            } else {
-                provider.updateState({ viewMode: 'preview' });
-            }
+            provider.updateState({
+                viewMode: 'preview',
+                previewKind: 'prBody',
+                previewTitle: lastBodyContent?.kind === 'prBody' ? lastBodyContent.title : provider.getState().previewTitle,
+                previewBody: lastBodyContent ? renderMarkdown(lastBodyContent.body) : provider.getState().previewBody,
+            });
         },
         onShowReview: () => {
-            if (lastReviewContent) {
-                PreviewPanel.createOrShow(extensionUri, lastReviewContent, lastReviewWorkspacePath, lastReviewOutputDir);
-            }
+            provider.updateState({
+                viewMode: 'preview',
+                previewKind: 'prReview',
+                previewTitle: null,
+                previewBody: lastReviewContent ? renderMarkdown(lastReviewContent.body) : provider.getState().previewBody,
+            });
+        },
+        onOpenPreviewPanel: () => {
+            void openRenderedPreview('prBody');
+        },
+        onOpenReviewPanel: () => {
+            void openRenderedPreview('prReview');
         },
         onCopyPreviewTitle: (title: string) => {
             vscode.env.clipboard.writeText(title);
@@ -885,6 +986,7 @@ export function activate(context: vscode.ExtensionContext): void {
             if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
         },
         onClearPr: clearPrOutput,
+        onCancel: cancelActiveGeneration,
         onSetModel: (model: string) => {
             const wf = getWorkspaceFolderWithConfig();
             if (!wf) { return; }
@@ -895,6 +997,7 @@ export function activate(context: vscode.ExtensionContext): void {
             provider.updateState({ currentModel: model });
             log(`Model changed to ${model}`);
             telemetryEvent('setModel', { model });
+            void refreshWorkspaceState();
         },
         onSetRunTests: (value: boolean) => {
             const wf = getWorkspaceFolderWithConfig();
@@ -905,14 +1008,38 @@ export function activate(context: vscode.ExtensionContext): void {
             writeConfig(wf, cfg);
             provider.updateState({ runTestsOnGenerate: value });
             log(`runTestsOnGenerate set to ${value}`);
+            void refreshWorkspaceState();
+        },
+        onSetIncludeRecentCommits: (value: boolean) => {
+            const wf = getWorkspaceFolderWithConfig();
+            if (!wf) { return; }
+            const cfg = readConfig(wf);
+            if (!cfg) { return; }
+            cfg.includeRecentCommits = value;
+            writeConfig(wf, cfg);
+            provider.updateState({ includeRecentCommits: value });
+            log(`includeRecentCommits set to ${value}`);
+            void refreshWorkspaceState();
         },
         onRegenerate: regeneratePrBodyWithInstruction,
     });
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, provider));
 
+    const configWatcher = vscode.workspace.createFileSystemWatcher('**/.pr-forge.json');
+    const outputWatcher = vscode.workspace.createFileSystemWatcher('**/.pr/**');
+    const refreshWatcher = () => { void refreshWorkspaceState(); };
+    configWatcher.onDidCreate(refreshWatcher);
+    configWatcher.onDidChange(refreshWatcher);
+    configWatcher.onDidDelete(refreshWatcher);
+    outputWatcher.onDidCreate(refreshWatcher);
+    outputWatcher.onDidChange(refreshWatcher);
+    outputWatcher.onDidDelete(refreshWatcher);
+    workspaceWatchers = [configWatcher, outputWatcher];
+    context.subscriptions.push(...workspaceWatchers);
+
     // Refresh sidebar whenever the workspace changes (e.g. folder opened after extension loaded)
     context.subscriptions.push(
-        vscode.workspace.onDidChangeWorkspaceFolders(() => refreshSidebarState(context))
+        vscode.workspace.onDidChangeWorkspaceFolders(() => { void refreshWorkspaceState(); })
     );
 
     context.subscriptions.push(vscode.commands.registerCommand('prForge.initializeProjectConfig', async () => {
@@ -943,5 +1070,8 @@ export function deactivate(): void {
     if (statusBarTools)    statusBarTools.dispose();
     if (statusBarPrBody)   statusBarPrBody.dispose();
     if (statusBarPrReview) statusBarPrReview.dispose();
+    for (const disposable of workspaceWatchers) {
+        disposable.dispose();
+    }
     disposeTelemetry();
 }

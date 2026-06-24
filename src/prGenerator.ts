@@ -6,6 +6,7 @@ import { chatComplete, chatCompleteStream, getModelLimits, LLMClientOptions, Usa
 export interface PrGeneratorOptions {
   workspacePath: string;
   baseBranch: string;
+  includeRecentCommits: boolean;
   outputDirectory: string;
   projectName: string;
   prRiskAreas: string[];
@@ -156,12 +157,16 @@ export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorR
   const cwd = opts.workspacePath;
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
   const headSha = safeExec('git rev-parse HEAD', cwd).trim();
-  const commits = safeExec(`git log ${opts.baseBranch}..HEAD --oneline`, cwd);
+  const commits = opts.includeRecentCommits ? safeExec(`git log ${opts.baseBranch}..HEAD --oneline`, cwd) : '';
   const diffStat = safeExec(`git diff --stat ${opts.baseBranch}..HEAD`, cwd);
   const files    = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
 
   opts.onLog(`Branch: ${branch}`);
-  opts.onLog(`Commits: ${commits.split('\n').filter(Boolean).length}`);
+  if (opts.includeRecentCommits) {
+    opts.onLog(`Commits: ${commits.split('\n').filter(Boolean).length}`);
+  } else {
+    opts.onLog('Commits: skipped');
+  }
 
   let diffContext: string;
   let testOutput: string;
@@ -235,8 +240,7 @@ Be specific, accurate, and concise. Use markdown formatting.`;
       content: `Generate a concise PR title (under 72 characters) for these changes:
 
 Branch: ${branch}
-Commits:
-${commits}
+${opts.includeRecentCommits ? `Commits:\n${commits}\n` : ''}
 
 Changed files:
 ${files}
@@ -268,8 +272,7 @@ Respond with ONLY the title text. No quotes, no markdown, no explanation.`,
 Branch: ${branch}
 Base branch: ${opts.baseBranch}
 
-Commits:
-${commits}
+${opts.includeRecentCommits ? `Commits:\n${commits}\n` : ''}
 
 Changed files:
 ${diffStat}
@@ -308,8 +311,7 @@ Include sections: Overall Assessment, Blocking Issues, Suggestions, Security Con
 
 Branch: ${branch}
 
-Commits:
-${commits}
+${opts.includeRecentCommits ? `Commits:\n${commits}\n` : ''}
 
 Risk areas: ${opts.prRiskAreas.join(', ')}
 
@@ -358,7 +360,7 @@ export async function regeneratePr(
   const cwd = opts.workspacePath;
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
   const headSha = safeExec('git rev-parse HEAD', cwd).trim();
-  const commits = safeExec(`git log ${opts.baseBranch}..HEAD --oneline`, cwd);
+  const commits = opts.includeRecentCommits ? safeExec(`git log ${opts.baseBranch}..HEAD --oneline`, cwd) : '';
   const diffStat = safeExec(`git diff --stat ${opts.baseBranch}..HEAD`, cwd);
   const files    = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
 
@@ -392,8 +394,7 @@ Be specific, accurate, and concise. Use markdown formatting.`;
 Branch: ${branch}
 Base branch: ${opts.baseBranch}
 
-Commits:
-${commits}
+${opts.includeRecentCommits ? `Commits:\n${commits}\n` : ''}
 
 Changed files:
 ${diffStat}
@@ -431,8 +432,7 @@ Write in markdown. Be specific about what changed and why.`;
       content: `Generate a concise PR title (under 72 characters) for these changes:
 
 Branch: ${branch}
-Commits:
-${commits}
+${opts.includeRecentCommits ? `Commits:\n${commits}\n` : ''}
 
 Changed files:
 ${files}

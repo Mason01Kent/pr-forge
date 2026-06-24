@@ -4,88 +4,109 @@
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/masonkent.pr-forge)](https://marketplace.visualstudio.com/items?itemName=masonkent.pr-forge)
 [![License](https://img.shields.io/github/license/Mason01Kent/pr-forge)](https://github.com/Mason01Kent/pr-forge/blob/master/LICENSE)
 
-AI-powered pull request description and code review generator for VS Code.
+AI-powered pull request title, description, and code review generator for VS Code.
 
-PR Forge turns your branch diff into a polished pull request title, description, and full code review — then submits the pull request to GitHub, all from a sidebar panel or the status bar.
+PR Forge turns your branch diff into a polished pull request title, description, and full code review, then submits the pull request to GitHub from a sidebar panel or the status bar.
 
-Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and **Ollama** (local).
+Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and **Ollama**.
 
 ## Features
 
-- **Generate PR Body** — AI-written title + description from your `base..HEAD` diff, commits, and test output.
-- **Generate PR Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation.
-- **Live streaming preview** — tokens stream into the sidebar as the model writes; no waiting for the full response.
-- **Regenerate with feedback** — type an instruction in the preview footer and hit Enter to revise the draft without re-running tests.
-- **Model picker** — dropdown lists available models from your provider's live API; falls back to curated defaults if unreachable. Selection saved to config automatically.
-- **Large-context mode** — Claude, GPT-4o, and DeepSeek receive the full diff in one shot; chunked summarization only kicks in for smaller models.
-- **Submit PR / Submit as Draft** — creates or updates the pull request on GitHub via the REST API without leaving VS Code.
-- **Cancellable generation** — hit Cancel on the progress notification at any point to abort mid-stream.
-- **Multi-provider** — DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, Ollama. API keys stored in VS Code SecretStorage, never in project files.
-- **Project type detection** — auto-detects .NET, Node, React, and Python to seed sensible defaults.
+- **Generate PR Body** - AI-written title and description from your `base..HEAD` diff, optional recent commits, and test output.
+- **Generate PR Review** - structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation.
+- **Sidebar progress flow** - generation stays on the tools view, shows live step updates inline, and opens the editor tab automatically when complete.
+- **Generated title row** - shows the title from `.pr/PR_TITLE.txt` with a full tooltip and truncation in the sidebar.
+- **Inline preview with feedback** - open the PR body or review from the sidebar, then regenerate the body with a targeted instruction without re-running tests.
+- **Model picker** - dropdown lists available models from your provider API and falls back to curated defaults if needed.
+- **Large-context mode** - Claude, GPT-4o, and DeepSeek can receive the full diff directly; chunked summarization is reserved for smaller models.
+- **Submit PR / Submit as Draft** - creates or updates the pull request on GitHub without leaving VS Code.
+- **Cancellable generation** - cancel from the sidebar activity strip or the VS Code progress notification.
+- **Include recent commits** - optional workspace setting stored in `.pr-forge.json` controls whether recent commit messages are included.
+- **Multi-provider** - API keys are stored in VS Code SecretStorage, never in project files.
+- **Project type detection** - seeds sensible defaults for .NET, Node, React, and Python projects.
 
 ## Install
 
-**Option A — VS Code Marketplace** (search or CLI):
+**Option A - VS Code Marketplace**:
 
-```
-ext install masonkent.pr-forge
-```
-
-**Option B — directly from this repo** (no build required):
-
-Download [`extensions/pr-forge/pr-forge-0.6.0.vsix`](extensions/pr-forge/pr-forge-0.6.0.vsix), then install it:
-
-```
-code --install-extension pr-forge-0.6.0.vsix
+```bash
+code --install-extension masonkent.pr-forge
 ```
 
-Or via the Extensions panel: `⋯ menu → Install from VSIX…`
+**Option B - local packaging**:
+
+```bash
+cd extensions/pr-forge
+npm ci
+npm run compile
+npx vsce package --no-dependencies
+code --install-extension pr-forge-0.6.9.vsix
+```
+
+Or use the Extensions panel and choose `Install from VSIX...`.
 
 ## Setup
 
-1. Click the **PR Forge icon** in the Activity Bar to open the sidebar.
-2. Click **Set API Key** — pick your provider and paste its key.
-3. Click **Init Config** (or run **PR Forge: Initialize Project Config** from the Command Palette) to create `.pr-forge.json` in your project root.
+1. Click the **PR Forge** icon in the Activity Bar to open the sidebar.
+2. Click **Set API Key** and store a provider key.
+3. Click **Init Config** to create `.pr-forge.json` in your project root.
 4. Switch to a feature branch and click **Generate PR Body** or **Generate PR Review**.
+5. Use **Include recent commits** if you want commit messages included in the prompt.
 
-> **Tip:** The sidebar model dropdown lets you switch models without editing any files. The Run Tests toggle skips the test step when you just want a quick regeneration.
+> The model dropdown, Run Tests toggle, and Include recent commits toggle are controlled directly from the sidebar.
+>
+> During generation, the sidebar stays on the tools view and shows an inline activity area with the current step, Cancel, and post-run action buttons. Use `Open Body File`, `Open Review File`, `Preview Body`, or `Preview Review` to switch modes.
 
-## Project config
+## Project Config
 
 Each project gets a `.pr-forge.json` in its root. The sidebar writes most fields for you, but you can edit it directly with **Open Config**.
 
 | Field | Description |
 |---|---|
-| `baseBranch` | Branch to diff against (default `main`). |
-| `provider` / `defaultModel` | AI provider and model — updated automatically when you use the sidebar controls. |
-| `runTestsOnGenerate` | Whether to run the test command before generating (default `true`). |
-| `outputDirectory` | Where generated files go (default `.pr/`). |
-| `reviewRulesFiles` | Files (e.g. `README.md`, `AGENTS.md`) injected as project standards into the prompt. |
-| `prRiskAreas` | Risk areas to highlight in the body/review. |
+| `baseBranch` | Branch to diff against. Default: `main` in new configs, but this repo's current root config uses `master`. |
+| `provider` / `defaultModel` | AI provider and model, updated automatically from the sidebar controls. |
+| `runTestsOnGenerate` | Whether to run the configured test command before generation. |
+| `includeRecentCommits` | Whether to include recent commit messages in PR body and title generation. |
+| `outputDirectory` | Where generated files are written. Default: `.pr/`. |
+| `reviewRulesFiles` | Files such as `README.md` or `AGENTS.md` injected into the prompt as project standards. |
+| `prRiskAreas` | Risk areas to highlight in the body and review. |
 | `prBodySections` | Section headings for the generated PR body. |
 
-## Generated files
+## Generated Files
 
 | File | Description |
 |---|---|
 | `.pr/PR_TITLE.txt` | Suggested PR title |
 | `.pr/PR_BODY.md` | Full PR description |
-| `.pr/PR_REVIEW.md` | Full PR review (only with **Generate PR Review**) |
+| `.pr/PR_REVIEW.md` | Full PR review, generated only with **Generate PR Review** |
 
-## Submitting pull requests
+## Submitting Pull Requests
 
-PR Forge uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to submit pull requests. If a pull request already exists for your branch, it offers to **update** the title and body instead of creating a duplicate.
+PR Forge uses your VS Code GitHub sign-in, falling back to `GITHUB_TOKEN`, to submit pull requests. If a pull request already exists for your branch, it offers to update the title and body instead of creating a duplicate.
 
-The `origin` remote must be a GitHub URL (HTTPS or SSH). GitLab remote detection is included — full GitLab merge request submission is coming in a future release.
+It will not generate on the base branch, and it prompts when config, API key, or git state is missing.
+
+GitHub is the supported submission target. GitLab remotes are detected, but Merge Request submission is not implemented yet.
+
+## Development
+
+```bash
+npm install
+npm run build
+npm run lint
+npm run package:vsix
+```
+
+`npm run build` runs TypeScript compile plus bundling. `npm run package:vsix` creates the release artifact with `vsce`.
 
 ## Telemetry
 
-PR Forge collects anonymous usage data to help improve the extension. No code, diffs, PR content, file paths, branch names, or API keys are ever collected.
+PR Forge collects anonymous usage data to improve the extension. No code, diffs, PR content, file paths, branch names, or API keys are collected.
 
-**What is collected:** activation events, feature usage (generate/review/submit), provider and model names, outcome (success/error/cancelled), token counts, estimated cost, and error categories (e.g. `auth`, `rate_limit`, `network`).
+Collected data includes activation events, feature usage, provider and model names, outcome, token counts, estimated cost, and broad error categories.
 
-**To opt out:** disable `telemetry.telemetryLevel` in VS Code settings (this turns off telemetry for all extensions), or set `"prForge.telemetry.enabled": false` in your VS Code user settings.
+To opt out, disable `telemetry.telemetryLevel` in VS Code settings or set `"prForge.telemetry.enabled": false` in user settings.
 
 ## License
 
-MIT — see the [repository](https://github.com/Mason01Kent/pr-forge) for details.
+MIT - see the [repository](https://github.com/Mason01Kent/pr-forge) for details.
