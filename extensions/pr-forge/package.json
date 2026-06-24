@@ -1,8 +1,8 @@
 {
   "name": "pr-forge",
   "displayName": "PR Forge",
-  "description": "AI-powered pull request description and code review generator with live streaming, model picker, and one-click GitHub submission. Supports DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, and Ollama.",
-  "version": "0.6.7",
+  "description": "AI-powered pull request description and code review generator with inline progress, model picker, and one-click GitHub submission. Supports DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, and Ollama.",
+  "version": "0.6.9",
   "publisher": "masonkent",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -99,15 +99,28 @@
           "group": "navigation"
         }
       ]
+    },
+    "configuration": {
+      "title": "PR Forge",
+      "properties": {
+        "prForge.telemetry.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Disable PR Forge extension telemetry when false."
+        }
+      }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run bundle",
+    "build": "npm run compile && npm run bundle",
     "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --platform=node --target=node18 --minify",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
-    "test": "mocha"
+    "test": "node --loader ts-node/esm ./node_modules/mocha/bin/mocha --spec \"src/test/**/*.test.ts\"",
+    "package:vsix": "npx @vscode/vsce package",
+    "publish:vsce": "npx @vscode/vsce publish"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

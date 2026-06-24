@@ -9,12 +9,20 @@ export interface SidebarState {
     availableModels: string[];
     currentModel: string | null;
     runTestsOnGenerate: boolean;
+    includeRecentCommits: boolean;
     lastRunType: 'prBody' | 'prReview' | null;
     lastRunStatus: 'success' | 'error' | null;
     lastRunTimestamp: string | null;
+    titleExists: boolean;
+    bodyExists: boolean;
+    reviewExists: boolean;
+    generatedTitle: string;
+    lastGeneratedAt: string | null;
     isRunning: boolean;
     prBodyReady: boolean;
     prReviewReady: boolean;
+    generationStep: string | null;
+    generationKind: 'prBody' | 'prReview' | null;
     viewMode: 'tools' | 'preview';
     previewKind: 'prBody' | 'prReview' | null;
     previewTitle: string | null;
@@ -39,18 +47,23 @@ type WebviewToExtMsg =
     | { command: 'showTools' }
     | { command: 'showPreview' }
     | { command: 'showReview' }
+    | { command: 'openPreviewPanel' }
+    | { command: 'openReviewPanel' }
     | { command: 'copyPreviewTitle' }
     | { command: 'copyPreviewBody' }
     | { command: 'openPrUrl' }
     | { command: 'clearPr' }
     | { command: 'setModel'; model: string }
     | { command: 'setRunTests'; value: boolean }
-    | { command: 'regenerate'; instruction: string };
+    | { command: 'setIncludeRecentCommits'; value: boolean }
+    | { command: 'regenerate'; instruction: string }
+    | { command: 'cancel' };
 
 type ExtToWebviewMsg =
     | { type: 'stateUpdate'; state: SidebarState }
     | { type: 'runStart'; runType: 'prBody' | 'prReview' }
-    | { type: 'runEnd'; runType: 'prBody' | 'prReview'; success: boolean; timestamp: string };
+    | { type: 'runEnd'; runType: 'prBody' | 'prReview'; success: boolean; timestamp: string }
+    | { type: 'stepUpdate'; step: string };
 
 export interface SidebarCallbacks {
     onReady: () => Promise<void>;
@@ -64,12 +77,16 @@ export interface SidebarCallbacks {
     onShowTools: () => void;
     onShowPreview: () => void;
     onShowReview: () => void;
+    onOpenPreviewPanel: () => void;
+    onOpenReviewPanel: () => void;
     onCopyPreviewTitle: (title: string) => void;
     onCopyPreviewBody: () => void;
     onOpenPrUrl: () => void;
     onClearPr: () => void;
+    onCancel: () => void;
     onSetModel: (model: string) => void;
     onSetRunTests: (value: boolean) => void;
+    onSetIncludeRecentCommits: (value: boolean) => void;
     onRegenerate: (instruction: string) => Promise<void>;
 }
 
@@ -85,12 +102,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         availableModels: [],
         currentModel: null,
         runTestsOnGenerate: true,
+        includeRecentCommits: false,
         lastRunType: null,
         lastRunStatus: null,
         lastRunTimestamp: null,
+        titleExists: false,
+        bodyExists: false,
+        reviewExists: false,
+        generatedTitle: 'PR Content',
+        lastGeneratedAt: null,
         isRunning: false,
         prBodyReady: false,
         prReviewReady: false,
+        generationStep: null,
+        generationKind: null,
         viewMode: 'tools',
         previewKind: null,
         previewTitle: null,
@@ -158,6 +183,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'showReview':
                     this._callbacks.onShowReview();
                     break;
+                case 'openPreviewPanel':
+                    this._callbacks.onOpenPreviewPanel();
+                    break;
+                case 'openReviewPanel':
+                    this._callbacks.onOpenReviewPanel();
+                    break;
                 case 'copyPreviewTitle':
                     if (this._state.previewTitle) {
                         this._callbacks.onCopyPreviewTitle(this._state.previewTitle);
@@ -172,11 +203,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'clearPr':
                     this._callbacks.onClearPr();
                     break;
+                case 'cancel':
+                    this._callbacks.onCancel();
+                    break;
                 case 'setModel':
                     this._callbacks.onSetModel(msg.model);
                     break;
                 case 'setRunTests':
                     this._callbacks.onSetRunTests(msg.value);
+                    break;
+                case 'setIncludeRecentCommits':
+                    this._callbacks.onSetIncludeRecentCommits(msg.value);
                     break;
                 case 'regenerate':
                     this._callbacks.onRegenerate(msg.instruction);
@@ -195,6 +232,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     public notifyRunStart(runType: 'prBody' | 'prReview'): void {
         this._state.isRunning = true;
         this._state.lastRunType = runType;
+        this._state.generationKind = runType;
+        this._state.generationStep = runType === 'prBody' ? 'Generating PR body...' : 'Generating PR review...';
         this._post({ type: 'runStart', runType });
     }
 
@@ -203,20 +242,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this._state.lastRunStatus = success ? 'success' : 'error';
         this._state.lastRunTimestamp = new Date().toLocaleTimeString();
         if (runType === 'prBody' && success) this._state.prBodyReady = true;
+        if (runType === 'prReview' && success) this._state.prReviewReady = true;
+        this._state.generationStep = null;
+        this._state.generationKind = null;
         this._post({ type: 'runEnd', runType, success, timestamp: this._state.lastRunTimestamp });
     }
 
+    public notifyStep(step: string): void {
+        this._state.generationStep = step;
+        this._post({ type: 'stepUpdate', step });
+    }
+
     private _post(msg: ExtToWebviewMsg): void {
-        this._view?.webview.postMessage(msg);
+        void this._view?.webview.postMessage(msg);
     }
 
     private _getHtmlForWebview(webview: vscode.Webview): string {
         const nonce = crypto.randomBytes(16).toString('hex');
-        const cssUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(this._extensionUri, 'media', 'sidebar.css')
-        );
+        const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'sidebar.css'));
 
-        // Inline VS Code codicons (MIT, microsoft/vscode-codicons). Themed via currentColor.
         const ic = {
             pr: `<svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13 10.05V5.5C13 4.12 11.88 3 10.5 3H8.71L9.85 1.85C10.05 1.66 10.05 1.34 9.85 1.15C9.66 0.95 9.34 0.95 9.15 1.15L7.15 3.15C6.95 3.34 6.95 3.66 7.15 3.85L9.15 5.85C9.34 6.05 9.66 6.05 9.85 5.85C10.05 5.66 10.05 5.34 9.85 5.15L8.71 4H10.5C11.33 4 12 4.67 12 5.5V10.05C10.86 10.28 10 11.29 10 12.5C10 13.88 11.12 15 12.5 15C13.88 15 15 13.88 15 12.5C15 11.29 14.14 10.28 13 10.05ZM12.5 14C11.67 14 11 13.33 11 12.5C11 11.67 11.67 11 12.5 11C13.33 11 14 11.67 14 12.5C14 13.33 13.33 14 12.5 14ZM6 3.5C6 2.12 4.88 1 3.5 1C2.12 1 1 2.12 1 3.5C1 4.71 1.86 5.72 3 5.95V10.051C1.86 10.283 1 11.293 1 12.5C1 13.879 2.122 15 3.5 15C4.878 15 6 13.879 6 12.5C6 11.292 5.14 10.283 4 10.051V5.95C5.14 5.72 6 4.71 6 3.5ZM2 3.5C2 2.67 2.67 2 3.5 2C4.33 2 5 2.67 5 3.5C5 4.33 4.33 5 3.5 5C2.67 5 2 4.33 2 3.5ZM5 12.5C5 13.327 4.327 14 3.5 14C2.673 14 2 13.327 2 12.5C2 11.673 2.673 11 3.5 11C4.327 11 5 11.673 5 12.5Z"/></svg>`,
             body: `<svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.14645 5.85355C9.34171 6.04882 9.65829 6.04882 9.85355 5.85355C10.0488 5.65829 10.0488 5.34171 9.85355 5.14645L8.70711 4H10.5C11.3284 4 12 4.67157 12 5.5V10.05C10.8589 10.2816 10 11.2905 10 12.5C10 13.8807 11.1193 15 12.5 15C13.8807 15 15 13.8807 15 12.5C15 11.2905 14.1411 10.2816 13 10.05V5.5C13 4.11929 11.8807 3 10.5 3H8.70711L9.85355 1.85355C10.0488 1.65829 10.0488 1.34171 9.85355 1.14645C9.65829 0.951184 9.34171 0.951184 9.14645 1.14645L7.14645 3.14645C6.95118 3.34171 6.95118 3.65829 7.14645 3.85355L9.14645 5.85355ZM14 12.5C14 13.3284 13.3284 14 12.5 14C11.6716 14 11 13.3284 11 12.5C11 11.6716 11.6716 11 12.5 11C13.3284 11 14 11.6716 14 12.5ZM6 3.5C6 4.70948 5.14112 5.71836 4 5.94999V10.5C4 11.3284 4.67157 12 5.5 12H7.29289L6.14645 10.8536C5.95118 10.6583 5.95118 10.3417 6.14645 10.1464C6.34171 9.95118 6.65829 9.95118 6.85355 10.1464L8.85355 12.1464C9.04882 12.3417 9.04882 12.6583 8.85355 12.8536L6.85355 14.8536C6.65829 15.0488 6.34171 15.0488 6.14645 14.8536C5.95118 14.6583 5.95118 14.3417 6.14645 14.1464L7.29289 13H5.5C4.11929 13 3 11.8807 3 10.5V5.94999C1.85888 5.71836 1 4.70948 1 3.5C1 2.11929 2.11929 1 3.5 1C4.88071 1 6 2.11929 6 3.5ZM5 3.5C5 2.67157 4.32843 2 3.5 2C2.67157 2 2 2.67157 2 3.5C2 4.32843 2.67157 5 3.5 5C4.32843 5 5 4.32843 5 3.5Z"/></svg>`,
@@ -244,8 +288,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <title>PR Forge</title>
 </head>
 <body>
-
-<!-- ====== TOOLS VIEW ====== -->
 <div id="tools-view">
   <div class="header">
     <span class="header-icon">${ic.pr}</span>
@@ -253,45 +295,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="card" id="status-card">
-    <div class="card-row">
-      <span class="label">Project</span>
-      <span class="value" id="project-name">—</span>
-    </div>
-    <div class="card-row">
-      <span class="label">Config</span>
-      <span class="badge warn" id="config-badge">Not found</span>
-    </div>
-    <div class="card-row">
-      <span class="label">Provider</span>
-      <span class="value" id="provider-name">—</span>
-    </div>
-    <div class="card-row">
-      <span class="label">API Key</span>
-      <span class="badge warn" id="key-badge">Not set</span>
-    </div>
-    <div class="card-row" id="model-row" style="display:none">
-      <span class="label">Model</span>
-      <select class="select-model" id="model-select"></select>
-    </div>
-    <div class="card-row" id="run-tests-row" style="display:none">
-      <span class="label">Run tests</span>
-      <label class="toggle">
-        <input type="checkbox" id="chk-run-tests" checked>
-        <span class="toggle-label" id="run-tests-label">On</span>
-      </label>
-    </div>
-    <div class="card-row" id="branch-row" style="display:none">
-      <span class="label">Branch</span>
-      <span class="value" id="branch-name"></span>
-    </div>
-    <div class="card-row" id="last-run-row" style="display:none">
-      <span class="label">Last run</span>
-      <span class="value" id="last-run-info"></span>
-    </div>
-    <div class="card-row" id="submitted-pr-row" style="display:none">
-      <span class="label">Submitted</span>
-      <button class="btn-link" id="btn-submitted-pr-link"></button>
-    </div>
+    <div class="card-row"><span class="label">Project</span><span class="value" id="project-name">-</span></div>
+    <div class="card-row"><span class="label">Config</span><span class="badge warn" id="config-badge">Not found</span></div>
+    <div class="card-row"><span class="label">Provider</span><span class="value" id="provider-name">-</span></div>
+    <div class="card-row"><span class="label">API Key</span><span class="badge warn" id="key-badge">Not set</span></div>
+    <div class="card-row" id="model-row" style="display:none"><span class="label">Model</span><select class="select-model" id="model-select"></select></div>
+    <div class="card-row" id="run-tests-row" style="display:none"><span class="label">Run tests</span><label class="toggle"><input type="checkbox" id="chk-run-tests" checked><span class="toggle-label" id="run-tests-label">On</span></label></div>
+    <div class="card-row" id="commit-row" style="display:none"><span class="label">Recent commits</span><label class="toggle"><input type="checkbox" id="chk-commits"><span class="toggle-label" id="commits-label">Off</span></label></div>
+    <div class="card-row" id="branch-row" style="display:none"><span class="label">Branch</span><span class="value" id="branch-name"></span></div>
+    <div class="card-row" id="last-run-row" style="display:none"><span class="label">Last run</span><span class="value" id="last-run-info"></span></div>
+    <div class="card-row" id="generated-title-row" style="display:none"><span class="label">Generated title</span><span class="value gh-pr-title-bar-text" id="generated-title-text"></span></div>
+    <div class="card-row" id="submitted-pr-row" style="display:none"><span class="label">Submitted</span><button class="btn-link" id="btn-submitted-pr-link"></button></div>
   </div>
 
   <div class="section">
@@ -303,18 +317,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="section">
-    <button class="btn btn-primary" id="btn-pr-body">
-      ${ic.body}<span id="btn-pr-body-label">Generate PR Body</span>
-    </button>
-    <button class="btn btn-secondary" id="btn-pr-review">
-      ${ic.review}<span id="btn-pr-review-label">Generate PR Review</span>
-    </button>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-pr-body">${ic.body}<span id="btn-pr-body-label">Generate PR Body</span></button>
+      <button class="btn btn-secondary" id="btn-pr-review">${ic.review}<span id="btn-pr-review-label">Generate PR Review</span></button>
+    </div>
   </div>
 
   <div class="section">
     <div class="btn-row">
-      <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>View PR Body</span></button>
-      <button class="btn btn-secondary" id="btn-view-review" disabled>${ic.review}<span>View PR Review</span></button>
+      <button class="btn btn-secondary" id="btn-view-summary" disabled>${ic.preview}<span>Open Body File</span></button>
+      <button class="btn btn-secondary" id="btn-view-review" disabled>${ic.review}<span>Open Review File</span></button>
+    </div>
+    <div class="btn-row" style="margin-top: 8px;">
+      <button class="btn btn-secondary" id="btn-open-summary" disabled>${ic.preview}<span>Preview Body</span></button>
+      <button class="btn btn-secondary" id="btn-open-review" disabled>${ic.review}<span>Preview Review</span></button>
     </div>
     <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
     <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
@@ -322,13 +338,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
   </div>
 
-  <div class="status-area" id="status-area" style="display:none">
-    <div class="spinner"></div>
-    <span id="status-message">Running...</span>
+  <div class="activity-area" id="activity-area">
+    <div class="activity-running" id="activity-running" style="display:none">
+      <div class="spinner"></div>
+      <span id="activity-step">Running...</span>
+    </div>
+    <button class="btn btn-secondary" id="btn-activity-cancel" style="display:none">Cancel</button>
+    <div class="activity-summary" id="activity-summary" style="display:none">
+      <div class="activity-summary-line"><span id="activity-status"></span></div>
+      <div class="activity-buttons">
+        <button class="btn btn-secondary" id="btn-activity-view-body" style="display:none">${ic.preview}<span>Preview Body</span></button>
+        <button class="btn btn-secondary" id="btn-activity-view-review" style="display:none">${ic.review}<span>Preview Review</span></button>
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- ====== PREVIEW VIEW ====== -->
 <div id="preview-view" style="display:none">
   <div class="preview-header">
     <button class="btn-back" id="btn-back">${ic.back}<span>Back</span></button>
@@ -340,63 +365,68 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <button class="btn-preview-action btn-preview-draft" id="btn-preview-draft" style="display:none">${ic.draft}<span>Submit Draft</span></button>
     <button class="btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none">${ic.submit}<span>Submit PR</span></button>
   </div>
-  <!-- GitHub-style title shown for PR Body previews -->
   <div class="gh-pr-title-bar" id="gh-pr-title-bar" style="display:none">
     <div class="gh-pr-title-bar-label">PR Title</div>
     <div class="gh-pr-title-bar-text" id="gh-pr-title-text"></div>
   </div>
   <div class="preview-content" id="preview-content"></div>
-  <!-- Regenerate-with-feedback (PR Body only) -->
   <div class="regen-bar" id="regen-bar" style="display:none">
-    <input class="regen-input" id="regen-input" type="text" placeholder="Instruction — e.g. make the summary shorter…">
+    <input class="regen-input" id="regen-input" type="text" placeholder="Instruction - e.g. make the summary shorter...">
     <button class="btn-regen" id="btn-regen">${ic.sync}<span>Regenerate</span></button>
   </div>
 </div>
 
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
-
   const el = (id) => document.getElementById(id);
   const toolsView = el('tools-view');
   const previewView = el('preview-view');
-
   let _onBaseBranch = false;
+  let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-view-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-clear-pr'].map(el);
-  el('btn-set-key').addEventListener('click',          () => vscode.postMessage({ command: 'setApiKey' }));
-  el('btn-init-config').addEventListener('click',       () => vscode.postMessage({ command: 'initConfig' }));
-  el('btn-open-config').addEventListener('click',       () => vscode.postMessage({ command: 'openConfig' }));
-  el('btn-pr-body').addEventListener('click',           () => vscode.postMessage({ command: 'generatePrBody' }));
-  el('btn-pr-review').addEventListener('click',         () => vscode.postMessage({ command: 'generatePrReview' }));
-  el('btn-submit-pr').addEventListener('click',         () => vscode.postMessage({ command: 'submitPr' }));
-  el('btn-submit-draft-pr').addEventListener('click',   () => vscode.postMessage({ command: 'submitDraftPr' }));
-  el('btn-view-summary').addEventListener('click',      () => vscode.postMessage({ command: 'showPreview' }));
-  el('btn-view-review').addEventListener('click',       () => vscode.postMessage({ command: 'showReview' }));
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-view-summary','btn-view-review','btn-open-summary','btn-open-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-clear-pr'].map(el);
+
+  el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
+  el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
+  el('btn-open-config').addEventListener('click', () => vscode.postMessage({ command: 'openConfig' }));
+  el('btn-pr-body').addEventListener('click', () => vscode.postMessage({ command: 'generatePrBody' }));
+  el('btn-pr-review').addEventListener('click', () => vscode.postMessage({ command: 'generatePrReview' }));
+  el('btn-submit-pr').addEventListener('click', () => vscode.postMessage({ command: 'submitPr' }));
+  el('btn-submit-draft-pr').addEventListener('click', () => vscode.postMessage({ command: 'submitDraftPr' }));
+  el('btn-view-summary').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
+  el('btn-view-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
+  el('btn-open-summary').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));
+  el('btn-open-review').addEventListener('click', () => vscode.postMessage({ command: 'openReviewPanel' }));
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
-  el('btn-open-github').addEventListener('click',        () => vscode.postMessage({ command: 'openPrUrl' }));
-  el('btn-clear-pr').addEventListener('click',          () => vscode.postMessage({ command: 'clearPr' }));
+  el('btn-open-github').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
+  el('btn-clear-pr').addEventListener('click', () => vscode.postMessage({ command: 'clearPr' }));
+  el('btn-activity-cancel').addEventListener('click', () => vscode.postMessage({ command: 'cancel' }));
+  el('btn-activity-view-body').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
+  el('btn-activity-view-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
 
-  el('model-select').addEventListener('change', (e) => {
-    vscode.postMessage({ command: 'setModel', model: e.target.value });
-  });
+  el('model-select').addEventListener('change', (e) => vscode.postMessage({ command: 'setModel', model: e.target.value }));
   el('chk-run-tests').addEventListener('change', (e) => {
     el('run-tests-label').textContent = e.target.checked ? 'On' : 'Off';
     vscode.postMessage({ command: 'setRunTests', value: e.target.checked });
   });
+  el('chk-commits').addEventListener('change', (e) => {
+    el('commits-label').textContent = e.target.checked ? 'On' : 'Off';
+    vscode.postMessage({ command: 'setIncludeRecentCommits', value: e.target.checked });
+  });
 
   el('btn-back').addEventListener('click', () => vscode.postMessage({ command: 'showTools' }));
   el('btn-preview-copy-title').addEventListener('click', () => vscode.postMessage({ command: 'copyPreviewTitle' }));
-  el('btn-preview-copy-body').addEventListener('click',  () => vscode.postMessage({ command: 'copyPreviewBody' }));
-  el('btn-preview-submit').addEventListener('click',     () => vscode.postMessage({ command: 'submitPr' }));
-  el('btn-preview-draft').addEventListener('click',      () => vscode.postMessage({ command: 'submitDraftPr' }));
+  el('btn-preview-copy-body').addEventListener('click', () => vscode.postMessage({ command: 'copyPreviewBody' }));
+  el('btn-preview-submit').addEventListener('click', () => vscode.postMessage({ command: 'submitPr' }));
+  el('btn-preview-draft').addEventListener('click', () => vscode.postMessage({ command: 'submitDraftPr' }));
   el('btn-regen').addEventListener('click', () => {
     const instruction = el('regen-input').value.trim();
-    if (!instruction) { return; }
+    if (!instruction) return;
     el('regen-input').value = '';
     vscode.postMessage({ command: 'regenerate', instruction });
   });
   el('regen-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { el('btn-regen').click(); }
+    if (e.key === 'Enter') el('btn-regen').click();
   });
 
   function switchView(mode) {
@@ -410,50 +440,113 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  function applyState(state) {
-    switchView(state.viewMode || 'tools');
+  function updateActivity(state) {
+    const area = el('activity-area');
+    const running = el('activity-running');
+    const summary = el('activity-summary');
+    const cancel = el('btn-activity-cancel');
+    const step = el('activity-step');
+    const status = el('activity-status');
+    const bodyBtn = el('btn-activity-view-body');
+    const reviewBtn = el('btn-activity-view-review');
 
-    el('project-name').textContent = state.projectName || '—';
+    const hasSuccess = !state.isRunning && state.lastRunStatus === 'success' && (state.bodyExists || state.reviewExists);
+    const hasError = !state.isRunning && state.lastRunStatus === 'error';
+    const show = state.isRunning || hasSuccess || hasError;
+
+    area.classList.toggle('show', show);
+    running.style.display = state.isRunning ? 'flex' : 'none';
+    cancel.style.display = state.isRunning ? '' : 'none';
+    summary.style.display = !state.isRunning && (hasSuccess || hasError) ? 'flex' : 'none';
+
+    if (state.isRunning) {
+      step.textContent = state.generationStep || (state.generationKind === 'prReview' ? 'Generating PR review...' : 'Generating PR body...');
+      bodyBtn.style.display = 'none';
+      reviewBtn.style.display = 'none';
+      return;
+    }
+
+    if (hasSuccess) {
+      const title = state.generatedTitle || 'PR Content';
+      status.textContent = '✓ ' + title + ' · ' + (state.lastGeneratedAt || state.lastRunTimestamp || '');
+      bodyBtn.style.display = state.bodyExists ? '' : 'none';
+      reviewBtn.style.display = state.reviewExists ? '' : 'none';
+      return;
+    }
+
+    if (hasError) {
+      status.textContent = '✕ Generation failed';
+      bodyBtn.style.display = 'none';
+      reviewBtn.style.display = 'none';
+      return;
+    }
+
+    status.textContent = '';
+    bodyBtn.style.display = 'none';
+    reviewBtn.style.display = 'none';
+  }
+
+  function applyState(state) {
+    currentState = state;
+    switchView(state.viewMode || 'tools');
+    el('project-name').textContent = state.projectName || '-';
+
     const badge = el('config-badge');
     if (state.configExists) {
-      badge.textContent = 'Found ✓'; badge.className = 'badge ok';
+      badge.textContent = 'Found ✓';
+      badge.className = 'badge ok';
     } else {
-      badge.textContent = 'Not found'; badge.className = 'badge warn';
+      badge.textContent = 'Not found';
+      badge.className = 'badge warn';
     }
-    el('provider-name').textContent = state.provider ? state.provider.charAt(0).toUpperCase() + state.provider.slice(1) : '—';
+
+    el('provider-name').textContent = state.provider ? state.provider.charAt(0).toUpperCase() + state.provider.slice(1) : '-';
     const keyBadge = el('key-badge');
     const noAuth = state.provider === 'ollama';
     keyBadge.textContent = noAuth ? 'Not needed' : (state.providerKeySet ? 'Set ✓' : 'Not set');
-    keyBadge.className   = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
+    keyBadge.className = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
 
-    // Model dropdown
     if (state.availableModels && state.availableModels.length > 0) {
       const sel = el('model-select');
       const prev = sel.value;
-      sel.innerHTML = state.availableModels.map(m =>
-        '<option value="' + m + '"' + (m === state.currentModel ? ' selected' : '') + '>' + m + '</option>'
-      ).join('');
-      if (state.currentModel) { sel.value = state.currentModel; }
-      else if (prev) { sel.value = prev; }
+      sel.innerHTML = state.availableModels.map(m => '<option value="' + m + '"' + (m === state.currentModel ? ' selected' : '') + '>' + m + '</option>').join('');
+      if (state.currentModel) sel.value = state.currentModel;
+      else if (prev) sel.value = prev;
       el('model-row').style.display = '';
     } else {
       el('model-row').style.display = 'none';
     }
 
-    // Run tests toggle
     if (state.configExists) {
       el('chk-run-tests').checked = state.runTestsOnGenerate !== false;
       el('run-tests-label').textContent = state.runTestsOnGenerate !== false ? 'On' : 'Off';
       el('run-tests-row').style.display = '';
+      el('chk-commits').checked = state.includeRecentCommits === true;
+      el('commits-label').textContent = state.includeRecentCommits === true ? 'On' : 'Off';
+      el('commit-row').style.display = '';
     } else {
       el('run-tests-row').style.display = 'none';
+      el('commit-row').style.display = 'none';
     }
 
-    if (state.lastRunTimestamp) {
-      const label = state.lastRunType === 'prBody' ? 'PR Body' : 'PR Review';
-      const icon  = state.lastRunStatus === 'success' ? '✓' : '✗';
-      el('last-run-info').textContent = icon + ' ' + label + ' · ' + state.lastRunTimestamp;
+    if (state.lastGeneratedAt || state.lastRunTimestamp) {
+      const label = state.generatedTitle || 'PR Content';
+      const icon = state.lastRunStatus === 'success' ? '✓' : '✕';
+      const ts = state.lastGeneratedAt || state.lastRunTimestamp;
+      el('last-run-info').textContent = icon + ' ' + label + ' · ' + ts;
       el('last-run-row').style.display = '';
+    } else {
+      el('last-run-row').style.display = 'none';
+    }
+
+    if (state.titleExists || state.bodyExists || state.reviewExists) {
+      const titleText = state.generatedTitle || 'PR Content';
+      const titleEl = el('generated-title-text');
+      titleEl.textContent = titleText;
+      titleEl.title = titleText;
+      el('generated-title-row').style.display = '';
+    } else {
+      el('generated-title-row').style.display = 'none';
     }
 
     if (state.submittedPrNumber && state.submittedPrTimestamp) {
@@ -474,64 +567,58 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('branch-row').style.display = 'none';
     }
 
-    el('btn-pr-body-label').textContent   = state.prBodyReady   ? 'Regenerate PR Body'   : 'Generate PR Body';
-    el('btn-pr-review-label').textContent = state.prReviewReady ? 'Regenerate PR Review' : 'Generate PR Review';
+    el('btn-pr-body-label').textContent = state.bodyExists ? 'Regenerate PR Body' : 'Generate PR Body';
+    el('btn-pr-review-label').textContent = state.reviewExists ? 'Regenerate PR Review' : 'Generate PR Review';
+    el('btn-pr-body').title = state.bodyExists ? 'Regenerate the PR body from the current workspace.' : 'Generate the PR body from the current workspace.';
+    el('btn-pr-review').title = state.reviewExists ? 'Regenerate the PR review from the current workspace.' : 'Generate the PR review from the current workspace.';
 
-    if (state.isRunning) {
-      setRunning(true, state.lastRunType === 'prBody' ? 'Generating PR Body...' : 'Generating PR Review...');
-    } else {
-      setRunning(false, '');
-    }
+    allBtns.forEach(b => { if (b) b.disabled = !!state.isRunning; });
+    el('btn-regen').disabled = !!state.isRunning;
 
-    const onBaseBranch = _onBaseBranch;
-    const canSubmit = state.prBodyReady && !onBaseBranch;
-    el('btn-pr-body').disabled         = onBaseBranch;
-    el('btn-pr-review').disabled       = onBaseBranch;
-    el('btn-pr-body').title            = onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR title and description to paste into GitHub when opening a pull request.';
-    el('btn-pr-review').title          = onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR body AND a code review of your diff — blocking issues, suggestions, security concerns, and a verdict. Run this before asking teammates to review.';
-    el('btn-submit-pr').disabled       = !canSubmit;
-    el('btn-submit-draft-pr').disabled = !canSubmit;
-    el('btn-view-summary').disabled    = !state.prBodyReady;
-    el('btn-view-review').disabled     = !state.prReviewReady;
-    el('btn-submit-pr').title          = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
-    el('btn-submit-draft-pr').title    = onBaseBranch ? 'Switch to a feature branch first' : (state.prBodyReady ? '' : 'Generate a PR Body first');
-    el('btn-view-summary').title       = state.prBodyReady ? 'Open the full PR Body panel' : 'Generate a PR Body first';
-    el('btn-view-review').title        = state.prReviewReady ? 'Open the full PR Review panel' : 'Generate a PR Review first';
-    el('btn-clear-pr').style.display    = state.prBodyReady ? '' : 'none';
+    const canSubmit = state.bodyExists && !_onBaseBranch;
+    el('btn-pr-body').disabled = !!state.isRunning || _onBaseBranch;
+    el('btn-pr-review').disabled = !!state.isRunning || _onBaseBranch;
+    el('btn-pr-body').title = _onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR title and description to paste into GitHub when opening a pull request.';
+    el('btn-pr-review').title = _onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR body and a code review of your diff.';
+    el('btn-submit-pr').disabled = !canSubmit || !!state.isRunning;
+    el('btn-submit-draft-pr').disabled = !canSubmit || !!state.isRunning;
+    el('btn-view-summary').disabled = !state.bodyExists || !!state.isRunning;
+    el('btn-view-review').disabled = !state.reviewExists || !!state.isRunning;
+    el('btn-open-summary').disabled = !state.bodyExists || !!state.isRunning;
+    el('btn-open-review').disabled = !state.reviewExists || !!state.isRunning;
+    el('btn-submit-pr').title = _onBaseBranch ? 'Switch to a feature branch first' : (state.bodyExists ? '' : 'Generate a PR Body first');
+    el('btn-submit-draft-pr').title = _onBaseBranch ? 'Switch to a feature branch first' : (state.bodyExists ? '' : 'Generate a PR Body first');
+    el('btn-view-summary').title = state.bodyExists ? 'Open the PR body file' : 'Generate a PR Body first';
+    el('btn-view-review').title = state.reviewExists ? 'Open the PR review file' : 'Generate a PR Review first';
+    el('btn-open-summary').title = state.bodyExists ? 'Preview the PR body' : 'Generate a PR Body first';
+    el('btn-open-review').title = state.reviewExists ? 'Preview the PR review' : 'Generate a PR Review first';
+    el('btn-clear-pr').style.display = state.bodyExists || state.reviewExists || state.lastRunStatus === 'error' ? '' : 'none';
     el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
 
     const isPrBody = state.previewKind === 'prBody';
-    el('preview-header-title').textContent      = isPrBody ? 'PR Body' : 'PR Review';
-    el('btn-preview-copy-title').style.display  = isPrBody ? '' : 'none';
-    el('btn-preview-submit').style.display      = (isPrBody && state.prBodyReady) ? '' : 'none';
-    el('btn-preview-draft').style.display       = (isPrBody && state.prBodyReady) ? '' : 'none';
-    el('regen-bar').style.display               = isPrBody ? '' : 'none';
+    el('preview-header-title').textContent = isPrBody ? 'PR Body' : 'PR Review';
+    el('btn-preview-copy-title').style.display = isPrBody ? '' : 'none';
+    el('btn-preview-submit').style.display = isPrBody && state.prBodyReady ? '' : 'none';
+    el('btn-preview-draft').style.display = isPrBody && state.prBodyReady ? '' : 'none';
+    el('regen-bar').style.display = isPrBody ? '' : 'none';
 
     const titleBar = el('gh-pr-title-bar');
     const titleText = el('gh-pr-title-text');
     if (isPrBody && state.previewTitle) {
       titleBar.style.display = 'block';
       titleText.textContent = state.previewTitle;
+      titleText.title = state.previewTitle;
     } else {
       titleBar.style.display = 'none';
       titleText.textContent = '';
+      titleText.title = '';
     }
 
     if (state.previewBody !== null && state.previewBody !== undefined) {
       el('preview-content').innerHTML = state.previewBody;
     }
-  }
 
-  function setRunning(running, msg) {
-    allBtns.forEach(b => { if (b) b.disabled = running; });
-    el('btn-regen').disabled = running;
-    const area = el('status-area');
-    if (running) {
-      el('status-message').textContent = msg;
-      area.style.display = 'flex';
-    } else {
-      area.style.display = 'none';
-    }
+    updateActivity(state);
   }
 
   window.addEventListener('message', (event) => {
@@ -541,31 +628,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         applyState(msg.state);
         break;
       case 'runStart':
-        setRunning(true, msg.runType === 'prBody' ? 'Generating PR Body...' : 'Generating PR Review...');
-        break;
-      case 'runEnd': {
-        setRunning(false, '');
-        const label = msg.runType === 'prBody' ? 'PR Body' : 'PR Review';
-        const icon  = msg.success ? '✓' : '✗';
-        el('last-run-info').textContent = icon + ' ' + label + ' · ' + msg.timestamp;
-        el('last-run-row').style.display = '';
-        if (msg.runType === 'prBody' && msg.success) {
-          const canSubmit = !_onBaseBranch;
-          el('btn-submit-pr').disabled       = !canSubmit;
-          el('btn-submit-draft-pr').disabled  = !canSubmit;
-          el('btn-view-summary').disabled     = false;
-          el('btn-submit-pr').title           = _onBaseBranch ? 'Switch to a feature branch first' : '';
-          el('btn-submit-draft-pr').title     = _onBaseBranch ? 'Switch to a feature branch first' : '';
-          el('btn-view-summary').title        = 'Open the full PR Body panel';
-          el('btn-pr-body-label').textContent = 'Regenerate PR Body';
-        }
-        if (msg.runType === 'prReview' && msg.success) {
-          el('btn-pr-review-label').textContent = 'Regenerate PR Review';
-          el('btn-view-review').disabled         = false;
-          el('btn-view-review').title            = 'Open the full PR Review panel';
+        if (currentState) {
+          applyState({ ...currentState, isRunning: true, generationKind: msg.runType });
         }
         break;
-      }
+      case 'stepUpdate':
+        if (currentState) {
+          applyState({ ...currentState, generationStep: msg.step, isRunning: true });
+        }
+        break;
+      case 'runEnd':
+        if (currentState) {
+          applyState({ ...currentState, isRunning: false, generationStep: null, generationKind: null });
+        }
+        break;
     }
   });
 

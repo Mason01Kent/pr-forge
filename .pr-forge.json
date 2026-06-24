@@ -1,12 +1,13 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "projectName": "PR Forge",
-  "baseBranch": "main",
+  "baseBranch": "master",
   "projectType": "unknown",
   "testCommand": "",
   "outputDirectory": ".pr",
   "provider": "deepseek",
-  "defaultModel": "deepseek-v4-flash",
+  "defaultModel": "deepseek-v4-pro",
+  "includeRecentCommits": false,
   "reviewRulesFiles": [
     "README.md"
   ],
