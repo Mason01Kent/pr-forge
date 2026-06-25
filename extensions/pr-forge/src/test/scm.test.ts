@@ -143,4 +143,46 @@ describe('GitLabScmProvider', () => {
             assert.ok(result.url.includes('99'));
         } finally { mock.close(); }
     });
+
+    it('createPr throws with 401 hint on bad credentials', async () => {
+        const mock = await mockGlServer(401, { message: 'Unauthorized' });
+        try {
+            const provider = new GitLabScmProvider('badtoken', mock.url);
+            await assert.rejects(
+                () => provider.createPr({ owner: 'g', repo: 'r', title: 'T', body: 'B', head: 'feat', base: 'main', token: 'badtoken' }),
+                (err: Error) => { assert.ok(err.message.toLowerCase().includes('credentials') || err.message.includes('401') || err.message.includes('Unauthorized')); return true; }
+            );
+        } finally { mock.close(); }
+    });
+
+    it('createPr throws with 404 hint when project not found', async () => {
+        const mock = await mockGlServer(404, { message: 'Not Found' });
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            await assert.rejects(
+                () => provider.createPr({ owner: 'ghost', repo: 'missing', title: 'T', body: 'B', head: 'feat', base: 'main', token: 'tok' }),
+                (err: Error) => { assert.ok(err.message.includes('404') || err.message.toLowerCase().includes('not found')); return true; }
+            );
+        } finally { mock.close(); }
+    });
+
+    it('updatePr throws on 404', async () => {
+        const mock = await mockGlServer(404, { message: 'Merge Request Not Found' });
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            await assert.rejects(
+                () => provider.updatePr({ owner: 'g', repo: 'r', title: 'T', body: 'B', head: 'feat', base: 'main', token: 'tok', number: 999 }),
+                (err: Error) => { assert.ok(err.message.includes('404') || err.message.toLowerCase().includes('not found')); return true; }
+            );
+        } finally { mock.close(); }
+    });
+
+    it('findOpenPr returns null when response is not an array', async () => {
+        const mock = await mockGlServer(200, { error: 'unexpected' });
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            const result = await provider.findOpenPr({ owner: 'g', repo: 'r', head: 'feat', token: 'tok' });
+            assert.strictEqual(result, null);
+        } finally { mock.close(); }
+    });
 });
