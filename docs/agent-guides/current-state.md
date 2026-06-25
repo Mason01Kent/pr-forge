@@ -1,11 +1,11 @@
 # PR Forge - Live Agent Status
 
-## Active phase
+## Phase status
 
 **Phase 14 - PR/MR Inbox and Merge Readiness (v1.5.0)**
 Spec: `docs/phases/phase-14.md`
 Branch: `phase-14/inbox`
-Started: 2026-06-25
+Completed: 2026-06-25
 
 ## Slice status
 
@@ -28,4 +28,4 @@ Started: 2026-06-25
 
 ## Next recommended work
 
-Phase 14 gate
+Phase 14 complete - no further phases are defined in `docs/phases/`
