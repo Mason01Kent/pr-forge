@@ -346,7 +346,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   <div class="no-key-banner" id="no-key-banner" style="display:none">
     <strong>No AI provider configured.</strong>
-    Commit summaries and file walkthrough will use raw git data. PR body, title, and review generation require an AI key — click <em>Set API Key</em> to add one.
+    <strong>Generate PR Body</strong> will produce a structured template from your git diff and commits — no AI required. PR Review and AI-written descriptions require a key — click <em>Set API Key</em> to add one.
   </div>
 
   <div class="section">

@@ -5,7 +5,7 @@ import { execSync } from 'child_process';
 import { SidebarProvider } from './sidebarProvider';
 import { PreviewPanel, PreviewContent } from './previewPanel';
 import { renderMarkdown } from './markdownRenderer';
-import { generatePr, regeneratePr, clearDiffCache, generateInlineFindings, getFileDiffs } from './prGenerator';
+import { generatePr, regeneratePr, clearDiffCache, generateInlineFindings, getFileDiffs, generatePrBodyTemplate } from './prGenerator';
 import { mapFindingsToComments, findingsToFallbackComment } from './reviewComments';
 import { PrForgeConfig, migrateConfig } from './config';
 import { PROVIDERS, DEFAULT_MODELS, UsageStats } from './llmClient';
@@ -469,12 +469,12 @@ async function generatePrBody(): Promise<void> {
 
     const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
     const providerInfo = PROVIDERS[config.provider];
-    if (!providerInfo?.noAuth && !apiKey) {
-        const set = await vscode.window.showErrorMessage(
-            `PR Forge: No API key set for ${config.provider}. Set one now?`, 'Set Key'
-        );
-        if (set === 'Set Key') await promptSetApiKey(extensionContext, config.provider);
-        return;
+    const noAiKey = !providerInfo?.noAuth && !apiKey;
+    if (noAiKey) {
+        vscode.window.showInformationMessage(
+            'PR Forge: No AI key configured — generating a template PR body from git data. Add a key via Set API Key for AI-written descriptions.',
+            'Set API Key'
+        ).then(action => { if (action === 'Set API Key') promptSetApiKey(extensionContext, config.provider); });
     }
 
     outputChannel.show(true);
@@ -492,7 +492,7 @@ async function generatePrBody(): Promise<void> {
                 { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Generating PR Body...', cancellable: true },
                 async (_progress, token) => {
                     token.onCancellationRequested(() => abortController.abort());
-                    return generatePr({
+                    const genOpts = {
                         workspacePath: workspaceFolder.uri.fsPath,
                         baseBranch: config.baseBranch,
                         includeRecentCommits: config.includeRecentCommits ?? false,
@@ -507,13 +507,14 @@ async function generatePrBody(): Promise<void> {
                         runTests: config.runTestsOnGenerate ?? true,
                         generateReview: false,
                         llm: { provider: config.provider, apiKey, model: config.defaultModel },
-                        onLog: (msg) => logGenerationStep(msg),
+                        onLog: (msg: string) => logGenerationStep(msg),
                         signal: abortController.signal,
-                    });
+                    };
+                    return noAiKey ? generatePrBodyTemplate(genOpts) : generatePr(genOpts);
                 }
             );
-            logUsage(result.usage);
-            telemetryEvent('generate.prBody', { provider: config.provider, model: config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
+            if (!noAiKey) { logUsage(result.usage); }
+            telemetryEvent('generate.prBody', { provider: noAiKey ? 'none' : config.provider, model: noAiKey ? 'template' : config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             const previewContent: PreviewContent = { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch };
             lastBodyContent = previewContent;
             PreviewPanel.createOrShow(extensionUri, previewContent, workspaceFolder.uri.fsPath, config.outputDirectory);
@@ -558,10 +559,11 @@ async function generatePrReview(): Promise<void> {
     const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
     const providerInfo = PROVIDERS[config.provider];
     if (!providerInfo?.noAuth && !apiKey) {
-        const set = await vscode.window.showErrorMessage(
-            `PR Forge: No API key set for ${config.provider}. Set one now?`, 'Set Key'
+        const action = await vscode.window.showInformationMessage(
+            'PR Forge: PR Review requires an AI provider key. Set one up to use this feature.',
+            'Set API Key'
         );
-        if (set === 'Set Key') await promptSetApiKey(extensionContext, config.provider);
+        if (action === 'Set API Key') await promptSetApiKey(extensionContext, config.provider);
         return;
     }
 
