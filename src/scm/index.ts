@@ -43,6 +43,24 @@ export interface ReadinessSummary {
     updatedAt?: string;
 }
 
+export interface ReviewThreadComment {
+    author?: string;
+    body: string;
+    url?: string;
+    createdAt?: string;
+}
+
+export interface ReviewThread {
+    id: string;
+    title: string;
+    url: string;
+    path?: string;
+    line?: number;
+    state: 'resolved' | 'unresolved' | 'unknown';
+    actionable: boolean;
+    comments: ReviewThreadComment[];
+}
+
 export interface ScmProvider {
     /** Human-readable name for error messages. */
     name: string;
@@ -54,6 +72,8 @@ export interface ScmProvider {
     listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]>;
     /** Summarize merge readiness for a specific PR/MR. */
     getReadiness(payload: { owner: string; repo: string; number: number }): Promise<ReadinessSummary>;
+    /** Fetch review threads/comments for a specific PR/MR. */
+    listReviewThreads(payload: { owner: string; repo: string; number: number }): Promise<ReviewThread[]>;
     /** Update title and body of an existing PR. */
     updatePr(payload: PrPayload & { number: number }): Promise<PrResult>;
     /** Post a plain comment on an existing PR/issue. Returns the comment URL. */

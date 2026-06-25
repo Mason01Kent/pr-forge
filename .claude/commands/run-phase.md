@@ -82,12 +82,17 @@ After a GO gate:
 
 1. Determine the next phase from the live status doc's "next recommended work" and the
    phase spec files.
-2. Confirm its gate/prerequisites are satisfied (each phase spec should have a prerequisites
-   section). **If a prerequisite is unmet, STOP and report** — do not force entry.
-3. If clear, restate the new target phase in one line and re-run from STEP 0 for it.
-4. **Branch policy:** unless the project's conventions say otherwise, do not create a branch
-   per slice. A new phase may warrant a new branch — if unsure, STOP and ask rather than
-   inventing a branching scheme.
+2. Create the release artifact for the completed phase:
+   - update the live status doc to mark the phase complete
+   - create a draft PR for the finished phase branch if the repo workflow supports PRs
+   - push the completed phase branch if it is not already on origin
+3. Create or switch to a fresh branch for the next phase before doing any work on it.
+4. Confirm the next phase's prerequisites are satisfied (each phase spec should have a
+   prerequisites section). **If a prerequisite is unmet, STOP and report** — do not force
+   entry.
+5. If clear, restate the new target phase in one line and re-run from STEP 0 for it.
+6. **Branch policy:** create a new branch per phase unless the project's conventions say
+   otherwise. Do not invent a branchless handoff if the repo expects phase branches.
 
 ## NEVER merge to main autonomously (hard rule)
 

@@ -1,6 +1,6 @@
 import * as https from 'https';
 import * as http from 'http';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, ReadinessSummary } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, ReadinessSummary, ReviewThread } from './index';
 
 function glRequest(
     baseUrl: string,
@@ -54,6 +54,12 @@ function glHint(statusCode: number): string {
 
 function projectId(owner: string, repo: string): string {
     return encodeURIComponent(`${owner}/${repo}`);
+}
+
+function summarizeThreadBody(body: string): string {
+    const trimmed = body.trim();
+    const firstLine = trimmed.split(/\r?\n/, 1)[0] ?? trimmed;
+    return firstLine.length > 120 ? `${firstLine.slice(0, 117).trimEnd()}...` : firstLine;
 }
 
 function pushUnique(list: string[], value: string): void {
@@ -321,6 +327,64 @@ export class GitLabScmProvider implements ScmProvider {
         const state = blockers.length > 0 ? 'blocked' : (info.length > 0 ? 'ready' : 'unknown');
         const summary = blockers[0] ?? info[0] ?? 'No readiness data available';
         return { state, summary, blockers, info, updatedAt };
+    }
+
+    async listReviewThreads(payload: { owner: string; repo: string; number: number }): Promise<ReviewThread[]> {
+        const { owner, repo, number } = payload;
+        const pid = projectId(owner, repo);
+        const { statusCode, json } = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests/${number}/discussions?per_page=100`, 'GET');
+        if (statusCode !== 200 || !Array.isArray(json)) {
+            throw new Error(`GitLab API error ${statusCode}${glHint(statusCode)}`);
+        }
+        return json.flatMap((discussion: {
+            id?: string;
+            resolved?: boolean;
+            resolvable?: boolean;
+            individual_note?: boolean;
+            notes?: Array<{
+                body?: string;
+                author?: { username?: string; name?: string };
+                web_url?: string;
+                created_at?: string;
+                position?: {
+                    new_path?: string;
+                    old_path?: string;
+                    new_line?: number;
+                    old_line?: number;
+                };
+            }>;
+        }, index: number) => {
+            const notes = discussion.notes ?? [];
+            if (notes.length === 0) {
+                return [];
+            }
+            const firstNote = notes[0];
+            const position = firstNote.position;
+            const path = position?.new_path ?? position?.old_path;
+            const line = position?.new_line ?? position?.old_line;
+            const state = discussion.resolved ? 'resolved' : 'unresolved';
+            const actionable = discussion.resolvable !== false && !discussion.resolved;
+            const titleBase = path
+                ? `${path}${typeof line === 'number' ? `:${line}` : ''}`
+                : discussion.individual_note ? 'Discussion note' : `Discussion ${index + 1}`;
+            return [{
+                id: discussion.id ?? `${titleBase}:${index}`,
+                title: `${titleBase} · ${state}`,
+                url: firstNote.web_url ?? `${this.baseUrl.replace('/api/v4', '')}/${owner}/${repo}/-/merge_requests/${number}`,
+                path,
+                line: typeof line === 'number' ? line : undefined,
+                state,
+                actionable,
+                comments: notes
+                    .filter((note): note is NonNullable<typeof note> => !!note && typeof note.body === 'string')
+                    .map(note => ({
+                        author: note.author?.username ?? note.author?.name ?? undefined,
+                        body: summarizeThreadBody(note.body),
+                        url: note.web_url ?? undefined,
+                        createdAt: note.created_at,
+                    })),
+            }];
+        });
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {
