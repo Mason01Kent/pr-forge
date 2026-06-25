@@ -13,6 +13,10 @@ export interface PrPayload {
     base: string;
     token: string;
     draft?: boolean;
+    labels?: string[];
+    reviewers?: string[];
+    assignees?: string[];
+    milestone?: string;
 }
 
 export interface PrResult {
@@ -45,6 +49,7 @@ export interface ScmProvider {
 export interface ReviewComment {
     path: string;
     line: number;
+    oldLine?: number;
     side: 'RIGHT' | 'LEFT';
     body: string;
 }

@@ -1,32 +1,31 @@
-# PR Forge — Live Agent Status
+# PR Forge - Live Agent Status
 
 ## Active phase
 
-**Phase 12 — Multi-SCM Overhaul (v1.3.0)**
-Spec: `docs/phases/phase-12.md`
-Branch: `phase-12/multi-scm` (to be created at Slice 1 start)
+**Phase 13 - Template-Aware PRs and Metadata Automation (v1.4.0)**
+Spec: `docs/phases/phase-13.md`
+Branch: `phase-13/template-metadata`
 Started: 2026-06-25
 
 ## Slice status
 
 | Slice | Title | Status | Completed |
 |-------|-------|--------|-----------|
-| 12.1 | Fix lint + complete no-key path | complete | 2026-06-25 |
-| 12.2 | GitLab PAT auth & parseRemote routing | complete | 2026-06-25 |
-| 12.3 | GitLab MR provider: create/find/update/comment | complete | 2026-06-25 |
-| 12.4 | GitLab inline review + full submit wiring | complete | 2026-06-25 |
-| 12.5 | Hardening, test expansion, config schema bump | complete | 2026-06-25 |
-| 12.6 | Version bump, docs, VSIX packaging, publish | complete | 2026-06-25 |
+| 13.1 | Template-aware PR body generation | complete | 2026-06-25 |
+| 13.2 | Metadata-aware submission | complete | 2026-06-25 |
+| 13.3 | GitLab review parity | complete | 2026-06-25 |
+| 13.4 | Hardening, docs, packaging, publish | pending | - |
 
-## Baseline (before phase starts)
+## Baseline
 
-- Version: 1.2.3
-- Branch: master (HEAD 99d4182)
-- Lint: 2 errors (prefer-const in prGenerator.ts lines 164, 385) — uncommitted WIP
+- Version: 1.4.0
+- Branch: `phase-13/template-metadata`
+- Lint: clean
 - Compile: clean
-- Tests: 49 passing
-- Uncommitted files: `src/extension.ts`, `src/prGenerator.ts` (the no-key template WIP)
+- Tests: 79 passing
+- VSIX: `pr-forge-1.4.0.vsix` built
+- Working tree: dirty with phase 13 release prep
 
 ## Next recommended work
 
-Phase 12 COMPLETE (2026-06-25). Ready for PR: phase-12/multi-scm → master. Publish requires VSCE_PAT.
+Slice 13.4 - finish publish step if `VSCE_PAT` becomes available, then push the branch
