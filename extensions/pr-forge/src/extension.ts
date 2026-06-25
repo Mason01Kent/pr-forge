@@ -772,12 +772,7 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     }
     const remote = parseRemote(remoteUrl, token!);
     if (!remote) {
-        const isGitLab = /gitlab\.com/i.test(remoteUrl);
-        vscode.window.showErrorMessage(
-            isGitLab
-                ? 'PR Forge 1.0 supports GitHub only. GitLab Merge Request submission is planned for a future release.'
-                : `PR Forge 1.0 supports GitHub only. The "origin" remote is not a GitHub URL: ${remoteUrl}`
-        );
+        vscode.window.showErrorMessage(`PR Forge: Unsupported remote host. Only GitHub and GitLab are supported. Remote: ${remoteUrl}`);
         return;
     }
 
@@ -953,7 +948,7 @@ async function postReviewToPr(): Promise<void> {
     }
     const remote = parseRemote(remoteUrl, token);
     if (!remote) {
-        vscode.window.showErrorMessage('PR Forge 1.0 supports GitHub only.');
+        vscode.window.showErrorMessage('PR Forge: Unsupported remote. Only GitHub and GitLab are supported.');
         return;
     }
 
@@ -1043,7 +1038,7 @@ async function postInlineReview(): Promise<void> {
         return;
     }
     const remote = parseRemote(remoteUrl, token);
-    if (!remote) { vscode.window.showErrorMessage('PR Forge supports GitHub only.'); return; }
+    if (!remote) { vscode.window.showErrorMessage('PR Forge: Unsupported remote. Only GitHub and GitLab are supported.'); return; }
 
     const reviewPath = path.join(cwd, config.outputDirectory, 'PR_REVIEW.md');
     const summaryBody = fs.existsSync(reviewPath)

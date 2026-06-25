@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { parseRemote } from '../scm';
+import { parseRemote, GitLabScmProvider } from '../scm';
 
 describe('parseRemote', () => {
   it('parses GitHub HTTPS remotes', () => {
@@ -16,12 +16,18 @@ describe('parseRemote', () => {
     assert.strictEqual(result?.provider.name, 'GitHub');
   });
 
-  it('rejects GitLab HTTPS remotes (GitHub-only in 1.0)', () => {
-    assert.strictEqual(parseRemote('https://gitlab.com/group/repo.git', 'token'), null);
+  it('parses GitLab HTTPS remotes', () => {
+    const result = parseRemote('https://gitlab.com/group/repo.git', 'token');
+    assert.strictEqual(result?.owner, 'group');
+    assert.strictEqual(result?.repo, 'repo');
+    assert.strictEqual(result?.provider.name, 'GitLab');
   });
 
-  it('rejects GitLab SSH remotes (GitHub-only in 1.0)', () => {
-    assert.strictEqual(parseRemote('git@gitlab.com:group/repo.git', 'token'), null);
+  it('parses GitLab SSH remotes', () => {
+    const result = parseRemote('git@gitlab.com:group/repo.git', 'token');
+    assert.strictEqual(result?.owner, 'group');
+    assert.strictEqual(result?.repo, 'repo');
+    assert.strictEqual(result?.provider.name, 'GitLab');
   });
 
   it('returns null for unsupported remotes', () => {
@@ -34,6 +40,32 @@ describe('parseRemote', () => {
     assert.strictEqual(result!.provider.name, 'GitHub');
     for (const method of ['createPr', 'findOpenPr', 'updatePr', 'postPrComment'] as const) {
       assert.strictEqual(typeof result!.provider[method], 'function', `missing ${method}`);
+    }
+  });
+
+  it('parses GitLab HTTPS remotes with group path', () => {
+    const result = parseRemote('https://gitlab.com/mygroup/myrepo.git', 'tok');
+    assert.strictEqual(result?.owner, 'mygroup');
+    assert.strictEqual(result?.repo, 'myrepo');
+    assert.strictEqual(result?.provider.name, 'GitLab');
+  });
+
+  it('parses GitLab SSH remotes', () => {
+    const result = parseRemote('git@gitlab.com:owner/repo.git', 'tok');
+    assert.strictEqual(result?.owner, 'owner');
+    assert.strictEqual(result?.repo, 'repo');
+    assert.strictEqual(result?.provider.name, 'GitLab');
+  });
+
+  it('still returns null for Bitbucket remotes', () => {
+    assert.strictEqual(parseRemote('https://bitbucket.org/owner/repo.git', 'tok'), null);
+  });
+
+  it('GitLabScmProvider exposes the full SCM interface', () => {
+    const provider = new GitLabScmProvider('tok');
+    assert.strictEqual(provider.name, 'GitLab');
+    for (const method of ['createPr', 'findOpenPr', 'updatePr', 'postPrComment'] as const) {
+      assert.strictEqual(typeof provider[method], 'function', `missing ${method}`);
     }
   });
 });

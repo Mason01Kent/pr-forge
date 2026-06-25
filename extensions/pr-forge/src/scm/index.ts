@@ -1,8 +1,7 @@
 /**
  * SCM provider abstraction.
- * PR Forge 1.0 supports GitHub only. `GitLabScmProvider` is kept in the repo
- * (src/scm/gitlab.ts) for a future release but is intentionally not wired into
- * `parseRemote`, so non-GitHub remotes are rejected with a clear message.
+ * Supports GitHub and GitLab remotes. Additional providers can be wired into
+ * `parseRemote` as needed.
  */
 
 export interface PrPayload {
@@ -51,9 +50,10 @@ export interface ReviewComment {
 }
 
 export { GitHubScmProvider } from './github';
-// GitLabScmProvider is intentionally NOT re-exported or wired — GitHub-only in 1.0.
+export { GitLabScmProvider } from './gitlab';
 
 import { GitHubScmProvider } from './github';
+import { GitLabScmProvider } from './gitlab';
 
 export interface ParsedRemote {
     owner: string;
@@ -63,7 +63,7 @@ export interface ParsedRemote {
 
 /**
  * Parse a git remote URL and return the owner/repo plus the matching ScmProvider.
- * GitHub-only in 1.0 — returns null for any non-GitHub host (including GitLab).
+ * Supports GitHub and GitLab remotes; returns null for all other hosts.
  */
 export function parseRemote(remoteUrl: string, token: string): ParsedRemote | null {
     // GitHub HTTPS or SSH
@@ -74,6 +74,17 @@ export function parseRemote(remoteUrl: string, token: string): ParsedRemote | nu
     const ghSsh = remoteUrl.match(/^git@github\.com:([^/]+)\/([^/\s]+?)(?:\.git)?$/);
     if (ghSsh) {
         return { owner: ghSsh[1], repo: ghSsh[2], provider: new GitHubScmProvider(token) };
+    }
+
+    // GitLab HTTPS: https://gitlab.com/owner/repo or https://gitlab.com/group/subgroup/repo
+    const glHttps = remoteUrl.match(/^https?:\/\/gitlab\.com\/(.+?)\/([^/\s]+?)(?:\.git)?$/);
+    if (glHttps) {
+        return { owner: glHttps[1], repo: glHttps[2], provider: new GitLabScmProvider(token) };
+    }
+    // GitLab SSH: git@gitlab.com:owner/repo or git@gitlab.com:group/subgroup/repo
+    const glSsh = remoteUrl.match(/^git@gitlab\.com:(.+?)\/([^/\s]+?)(?:\.git)?$/);
+    if (glSsh) {
+        return { owner: glSsh[1], repo: glSsh[2], provider: new GitLabScmProvider(token) };
     }
 
     return null;
