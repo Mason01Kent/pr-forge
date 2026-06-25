@@ -16,4 +16,8 @@ eslint.config.js
 .mocharc*
 AGENTS.md
 .github/**
+.claude/**
+.codex/**
+docs/**
+OldVersions/**
 **/*.vsix

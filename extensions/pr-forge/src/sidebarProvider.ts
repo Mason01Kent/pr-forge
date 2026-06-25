@@ -365,9 +365,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="section">
-  <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR to GitHub</span></button>
+  <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR</span></button>
   <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
-  <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR on GitHub</span></button>
+  <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR</span></button>
   <button class="btn btn-secondary" id="btn-post-review" style="display:none">${ic.review}<span>Post Review to PR</span></button>
   <button class="btn btn-secondary" id="btn-post-inline-review" style="display:none">${ic.review}<span>Post Inline Review</span></button>
   <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
@@ -637,7 +637,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const canSubmit = state.bodyExists && !_onBaseBranch;
     el('btn-pr-body').disabled = !!state.isRunning || _onBaseBranch;
     el('btn-pr-review').disabled = !!state.isRunning || _onBaseBranch;
-    el('btn-pr-body').title = _onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR title and description to paste into GitHub when opening a pull request.';
+    el('btn-pr-body').title = _onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR title and description to paste into your pull request or merge request.';
     el('btn-pr-review').title = _onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR body and a code review of your diff.';
     el('btn-submit-pr').disabled = !canSubmit || !!state.isRunning;
     el('btn-submit-draft-pr').disabled = !canSubmit || !!state.isRunning;

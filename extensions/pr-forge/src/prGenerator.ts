@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { chatComplete, chatCompleteStream, getModelLimits, LLMClientOptions, UsageStats } from './llmClient';
 import { Finding, FileDiff, annotateDiff, parseFindingsJson } from './reviewComments';
+import { loadTemplateGuidance } from './templateDiscovery';
 
 export interface PrGeneratorOptions {
   workspacePath: string;
@@ -17,6 +18,7 @@ export interface PrGeneratorOptions {
   prRiskAreas: string[];
   prBodySections: string[];
   reviewRulesFiles: string[];
+  templateFiles: string[];
   testCommand: string;
   generateReview: boolean;
   /** When false, skip running tests (use cached output if available). */
@@ -161,7 +163,7 @@ async function buildFileWalkthroughTable(opts: PrGeneratorOptions, cwd: string):
   }).join('\n\n');
 
   opts.onLog(`Summarising ${fileDiffs.length} changed file(s)...`);
-  let summaries: Record<string, string> = {};
+  const summaries: Record<string, string> = {};
   try {
     const response = await chatComplete(opts.llm, [
       { role: 'system', content: `You summarise file changes for the ${opts.projectName} project. Output strict JSON only — no prose, no code fences.` },
@@ -381,8 +383,8 @@ ${context}`,
 }
 
 /** Strip common branch-name prefixes and separators to produce a readable PR title. */
-function titleFromBranch(branch: string): string {
-  let t = branch
+export function titleFromBranch(branch: string): string {
+  const t = branch
     .replace(/^(feat|fix|chore|hotfix|release|refactor|docs|test|style|build|ci|perf|revert)[/\-]/i, '')
     .replace(/[-_/]/g, ' ')
     .trim();
@@ -440,6 +442,8 @@ export async function generatePrBodyTemplate(opts: PrGeneratorOptions): Promise<
     opts.onLog('Tests completed.');
   }
 
+  const templateGuidance = loadTemplateGuidance(cwd, opts.templateFiles);
+
   // Sections that get auto-filled vs left as placeholders
   const AUTO_SECTIONS = new Set(['summary', 'changes', 'commits', 'tests', 'tests / verification', 'test output']);
   const sections = opts.prBodySections.length
@@ -476,6 +480,10 @@ export async function generatePrBodyTemplate(opts: PrGeneratorOptions): Promise<
 
   // Extra sections (non-auto ones)
   if (parts.length > 0) { body += '\n\n' + parts.join('\n\n'); }
+
+  if (templateGuidance) {
+    body += `\n\n## Repository template\n\n${templateGuidance}`;
+  }
 
   // Tests
   body += `\n\n## Tests / verification\n\n\`\`\`\n${testOutput.trim()}\n\`\`\``;
@@ -555,8 +563,9 @@ export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorR
     } catch { /* skip */ }
   }
   const reviewRules = ruleParts.join('\n\n---\n\n');
+  const templateGuidance = loadTemplateGuidance(cwd, opts.templateFiles);
 
-  const systemPrompt = `You are a senior software engineer writing a GitHub pull request for the ${opts.projectName} project.
+  const systemPrompt = `You are a senior software engineer writing a pull request or merge request for the ${opts.projectName} project.
 Be specific, accurate, and concise. Use markdown formatting.`;
 
   const budget = Math.max(limits.inputBudgetChars - 20_000, 30_000);
@@ -610,6 +619,8 @@ ${diffStat}
 
 ${diffLabel}:
 ${diffContext}
+
+${templateGuidance ? 'Repository template:\n' + templateGuidance + '\n' : ''}
 
 Test output:
 ${testOutput}
@@ -699,6 +710,7 @@ export async function regeneratePr(
   const files    = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
 
   const { diffContext, testOutput } = _diffCache;
+  const templateGuidance = loadTemplateGuidance(cwd, opts.templateFiles);
 
   const limits = getModelLimits(opts.llm.model);
   const ruleCapPerFile = Math.floor(Math.min(30_000, limits.inputBudgetChars / 8));
@@ -720,7 +732,7 @@ export async function regeneratePr(
   const budget = Math.max(limits.inputBudgetChars - 20_000, 30_000);
   const diffLabel = diffContext.length > budget * 0.8 ? 'Diff summaries' : 'Diff';
 
-  const systemPrompt = `You are a senior software engineer writing a GitHub pull request for the ${opts.projectName} project.
+  const systemPrompt = `You are a senior software engineer writing a pull request or merge request for the ${opts.projectName} project.
 Be specific, accurate, and concise. Use markdown formatting.`;
 
   const originalUserMessage = `Write a pull request description with these sections: ${opts.prBodySections.join(', ')}.
@@ -735,6 +747,8 @@ ${diffStat}
 
 ${diffLabel}:
 ${diffContext}
+
+${templateGuidance ? 'Repository template:\n' + templateGuidance + '\n' : ''}
 
 Test output:
 ${testOutput}

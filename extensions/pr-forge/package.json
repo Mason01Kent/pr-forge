@@ -1,8 +1,8 @@
 {
   "name": "pr-forge",
   "displayName": "PR Forge",
-  "description": "Generate PR titles, descriptions, and review summaries from git diffs, then submit or update GitHub PRs from VS Code.",
-  "version": "1.2.4",
+  "description": "Generate PR titles, descriptions, and review summaries from git diffs, then submit or update pull requests and merge requests from VS Code.",
+  "version": "1.4.0",
   "publisher": "masonkent",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -22,7 +22,8 @@
     "pr",
     "code review",
     "ai",
-    "github"
+    "github",
+    "gitlab"
   ],
   "license": "MIT",
   "engines": {
@@ -75,11 +76,11 @@
       },
       {
         "command": "prForge.submitPr",
-        "title": "PR Forge: Submit PR to GitHub"
+        "title": "PR Forge: Submit PR"
       },
       {
         "command": "prForge.submitDraftPr",
-        "title": "PR Forge: Submit Draft PR to GitHub"
+        "title": "PR Forge: Submit Draft PR"
       },
       {
         "command": "prForge.postReview",
