@@ -110,6 +110,86 @@ describe('SCM metadata automation', () => {
         }
     });
 
+    it('lists GitHub review threads and comments', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'POST /graphql':
+                    return {
+                        statusCode: 200,
+                        body: {
+                            data: {
+                                repository: {
+                                    pullRequest: {
+                                        reviewThreads: {
+                                            nodes: [
+                                                {
+                                                    id: 'thread-1',
+                                                    path: 'src/app.ts',
+                                                    line: 12,
+                                                    isResolved: false,
+                                                    comments: {
+                                                        nodes: [
+                                                            {
+                                                                body: 'Please tighten this up',
+                                                                url: 'https://github.com/o/r/pull/4#discussion_r1',
+                                                                createdAt: '2026-06-25T10:00:00Z',
+                                                                author: { login: 'alice' },
+                                                                path: 'src/app.ts',
+                                                                line: 12,
+                                                            },
+                                                            {
+                                                                body: 'Fixed in the next commit',
+                                                                url: 'https://github.com/o/r/pull/4#discussion_r2',
+                                                                createdAt: '2026-06-25T10:05:00Z',
+                                                                author: { login: 'bob' },
+                                                                path: 'src/app.ts',
+                                                                line: 12,
+                                                            },
+                                                        ],
+                                                    },
+                                                },
+                                            ],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const threads = await provider.listReviewThreads({ owner: 'o', repo: 'r', number: 4 });
+            assert.deepStrictEqual(threads, [{
+                id: 'thread-1',
+                title: 'src/app.ts:12 · unresolved',
+                url: 'https://github.com/o/r/pull/4#discussion_r1',
+                path: 'src/app.ts',
+                line: 12,
+                state: 'unresolved',
+                actionable: true,
+                comments: [
+                    {
+                        author: 'alice',
+                        body: 'Please tighten this up',
+                        url: 'https://github.com/o/r/pull/4#discussion_r1',
+                        createdAt: '2026-06-25T10:00:00Z',
+                    },
+                    {
+                        author: 'bob',
+                        body: 'Fixed in the next commit',
+                        url: 'https://github.com/o/r/pull/4#discussion_r2',
+                        createdAt: '2026-06-25T10:05:00Z',
+                    },
+                ],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
     it('attaches GitHub labels, assignees, reviewers, and milestone metadata', async () => {
         const server = await mockServer((req) => {
             switch (`${req.method} ${req.path}`) {
@@ -268,6 +348,73 @@ describe('SCM metadata automation', () => {
             assert.strictEqual(readiness.state, 'blocked');
             assert.ok(readiness.blockers.some(line => line.includes('approval') || line.includes('pipeline')));
             assert.ok(readiness.info.some(line => line.includes('Approvals required') || line.includes('Approved by')));
+        } finally {
+            server.close();
+        }
+    });
+
+    it('lists GitLab review threads and comments', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /projects/o%2Fr/merge_requests/9/discussions?per_page=100':
+                    return {
+                        statusCode: 200,
+                        body: [
+                            {
+                                id: 'disc-1',
+                                resolved: false,
+                                resolvable: true,
+                                notes: [
+                                    {
+                                        body: 'Please rename this method',
+                                        web_url: 'https://gitlab.com/o/r/-/merge_requests/9#note_1',
+                                        created_at: '2026-06-25T11:00:00Z',
+                                        author: { username: 'alice' },
+                                        position: {
+                                            new_path: 'src/app.ts',
+                                            new_line: 21,
+                                        },
+                                    },
+                                    {
+                                        body: 'Updated in the latest push',
+                                        web_url: 'https://gitlab.com/o/r/-/merge_requests/9#note_2',
+                                        created_at: '2026-06-25T11:05:00Z',
+                                        author: { username: 'bob' },
+                                    },
+                                ],
+                            },
+                        ],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const threads = await provider.listReviewThreads({ owner: 'o', repo: 'r', number: 9 });
+            assert.deepStrictEqual(threads, [{
+                id: 'disc-1',
+                title: 'src/app.ts:21 · unresolved',
+                url: 'https://gitlab.com/o/r/-/merge_requests/9#note_1',
+                path: 'src/app.ts',
+                line: 21,
+                state: 'unresolved',
+                actionable: true,
+                comments: [
+                    {
+                        author: 'alice',
+                        body: 'Please rename this method',
+                        url: 'https://gitlab.com/o/r/-/merge_requests/9#note_1',
+                        createdAt: '2026-06-25T11:00:00Z',
+                    },
+                    {
+                        author: 'bob',
+                        body: 'Updated in the latest push',
+                        url: 'https://gitlab.com/o/r/-/merge_requests/9#note_2',
+                        createdAt: '2026-06-25T11:05:00Z',
+                    },
+                ],
+            }]);
         } finally {
             server.close();
         }
