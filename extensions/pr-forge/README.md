@@ -6,7 +6,7 @@
 
 **From diff to draft PR without leaving VS Code.**
 
-PR Forge reads your git diff and commits, generates a pull request title, description, and review, then submits or updates the PR on GitHub — all from a sidebar panel.
+PR Forge reads your git diff and commits, generates a pull request title, description, and review, then submits or updates the PR on GitHub or GitLab — all from a sidebar panel.
 
 No Copilot subscription. No per-seat fee. Bring your own API key and model.
 
@@ -58,19 +58,22 @@ DeepSeek · OpenAI · Anthropic · OpenRouter · Groq · Ollama (local, no key r
 
 ---
 
-## GitHub submission
+## SCM submission
 
-PR Forge uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to create or update pull requests. If a PR already exists for your branch, it offers to update the title and body instead of opening a duplicate. Draft PRs are supported.
+PR Forge supports **GitHub** and **GitLab** remotes.
 
-After submitting, **Post Review to PR** posts the full review as a single comment, or use **Post Inline Review** to post line-anchored comments directly on the diff.
+**GitHub** — uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to create or update pull requests. If a PR already exists for your branch, it offers to update the title and body instead of opening a duplicate. Draft PRs are supported.
 
-**GitHub only in this release.** Non-GitHub remotes are rejected with a clear message. GitLab Merge Request support is planned.
+**GitLab** — uses a personal access token (set via "Set API Key" → "GitLab (SCM token)", api scope required) to create or update merge requests.
+
+After submitting, **Post Review to PR** posts the full review as a single comment, or use **Post Inline Review** to post line-anchored comments directly on the diff (GitHub) or as MR notes (GitLab).
 
 ---
 
 ## Limitations
 
-- **GitHub only** — GitLab, Bitbucket, and Azure DevOps submission are not yet supported
+- **GitLab inline review** — line-anchored diff comments are not yet supported on GitLab; inline review falls back to posting MR notes (content identical, just not anchored to diff lines)
+- **Bitbucket / Azure DevOps** — not yet supported
 - **Multi-line suggestion ranges** are not yet supported — committable suggestions apply to a single line only
 
 ---

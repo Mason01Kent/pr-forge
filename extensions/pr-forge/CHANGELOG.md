@@ -3,6 +3,12 @@
 All notable changes to PR Forge are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.3.0
+
+### Added
+- **GitLab Merge Request support** — create, update, comment, and post inline reviews on GitLab MRs. Set a GitLab personal access token via "Set API Key" → "GitLab (SCM token)" (api scope required). Inline review falls back to plain MR notes if line anchoring is unavailable.
+- **No-API-key PR body template** — when no AI key is configured, "Generate PR Body" produces a structured template (branch name, diffstat, changed-files table, commits table) you can fill in manually.
+
 ## 1.2.1
 
 ### Changed
