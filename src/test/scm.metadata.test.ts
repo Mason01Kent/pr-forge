@@ -70,6 +70,45 @@ describe('SCM metadata automation', () => {
         }
     });
 
+    it('lists open GitHub issues', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /repos/o/r/issues?state=open&per_page=100&sort=updated&direction=desc':
+                    return {
+                        statusCode: 200,
+                        body: [{
+                            number: 12,
+                            title: 'Track upload progress',
+                            html_url: 'https://github.com/o/r/issues/12',
+                            state: 'open',
+                            updated_at: '2026-06-25T09:30:00Z',
+                            user: { login: 'alice' },
+                            labels: [{ name: 'enhancement' }],
+                            body: 'Users need a progress bar.',
+                        }],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const items = await provider.listOpenIssues({ owner: 'o', repo: 'r' });
+            assert.deepStrictEqual(items, [{
+                number: 12,
+                title: 'Track upload progress',
+                url: 'https://github.com/o/r/issues/12',
+                body: 'Users need a progress bar.',
+                state: 'open',
+                author: 'alice',
+                updatedAt: '2026-06-25T09:30:00Z',
+                labels: ['enhancement'],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
     it('summarizes GitHub merge readiness from statuses, checks, and reviews', async () => {
         const server = await mockServer((req) => {
             switch (`${req.method} ${req.path}`) {
@@ -308,6 +347,45 @@ describe('SCM metadata automation', () => {
                 author: 'bob',
                 updatedAt: '2026-06-25T11:00:00Z',
                 labels: ['backend', 'priority'],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('lists open GitLab issues', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /projects/o%2Fr/issues?state=opened&scope=all&per_page=100&order_by=updated_at&sort=desc':
+                    return {
+                        statusCode: 200,
+                        body: [{
+                            iid: 19,
+                            title: 'Add branch seeding',
+                            web_url: 'https://gitlab.com/o/r/-/issues/19',
+                            state: 'opened',
+                            updated_at: '2026-06-25T09:40:00Z',
+                            author: { username: 'bob' },
+                            labels: ['backend', 'workflow'],
+                            description: 'Create a branch from issue metadata.',
+                        }],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const items = await provider.listOpenIssues({ owner: 'o', repo: 'r' });
+            assert.deepStrictEqual(items, [{
+                number: 19,
+                title: 'Add branch seeding',
+                url: 'https://gitlab.com/o/r/-/issues/19',
+                body: 'Create a branch from issue metadata.',
+                state: 'opened',
+                author: 'bob',
+                updatedAt: '2026-06-25T09:40:00Z',
+                labels: ['backend', 'workflow'],
             }]);
         } finally {
             server.close();

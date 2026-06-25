@@ -91,6 +91,10 @@
         "title": "PR Forge: Browse Review Threads"
       },
       {
+        "command": "prForge.openIssueFlow",
+        "title": "PR Forge: Seed from Issue"
+      },
+      {
         "command": "prForge.postInlineReview",
         "title": "PR Forge: Post Inline Review to PR"
       },

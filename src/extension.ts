@@ -10,7 +10,7 @@ import { mapFindingsToComments, findingsToFallbackComment } from './reviewCommen
 import { PrForgeConfig, migrateConfig } from './config';
 import { PROVIDERS, DEFAULT_MODELS, UsageStats } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
-import { parseRemote, ReviewThread } from './scm/index';
+import { parseRemote, IssueItem, ReviewThread } from './scm/index';
 import { initTelemetry, disposeTelemetry, telemetryEvent, telemetryError, classifyError } from './telemetry';
 import { discoverRepositoryTemplateFiles } from './templateDiscovery';
 
@@ -972,6 +972,80 @@ async function browseReviewThreads(
     await vscode.env.openExternal(vscode.Uri.parse(thread.url));
 }
 
+function slugifyIssueTitle(title: string): string {
+    return title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .replace(/-{2,}/g, '-');
+}
+
+async function seedPrDraftFromIssue(
+    workspaceFolder: vscode.WorkspaceFolder,
+    issue: IssueItem,
+): Promise<void> {
+    const config = readConfig(workspaceFolder);
+    if (!config) {
+        vscode.window.showErrorMessage('PR Forge: No config found.');
+        return;
+    }
+
+    const outputDir = path.join(workspaceFolder.uri.fsPath, config.outputDirectory);
+    fs.mkdirSync(outputDir, { recursive: true });
+    const issueTitle = issue.title.trim();
+    const issueBody = (issue.body ?? '').trim();
+    const titleText = issueTitle || `Issue #${issue.number}`;
+    const bodyParts = [
+        `Closes #${issue.number}`,
+        '',
+        '## Issue',
+        `- ${issue.title}`,
+        issue.author ? `- Author: ${issue.author}` : null,
+        issue.updatedAt ? `- Updated: ${issue.updatedAt}` : null,
+        issue.labels && issue.labels.length > 0 ? `- Labels: ${issue.labels.join(', ')}` : null,
+        '',
+        issueBody || '_No issue description provided._',
+        '',
+        `Source issue: ${issue.url}`,
+    ].filter((part): part is string => part !== null);
+
+    fs.writeFileSync(path.join(outputDir, 'PR_TITLE.txt'), `${titleText}\n`, 'utf-8');
+    fs.writeFileSync(path.join(outputDir, 'PR_BODY.md'), `${bodyParts.join('\n')}\n`, 'utf-8');
+    if (fs.existsSync(path.join(outputDir, 'PR_REVIEW.md'))) {
+        fs.unlinkSync(path.join(outputDir, 'PR_REVIEW.md'));
+    }
+    await refreshWorkspaceState();
+    vscode.window.showInformationMessage(`PR Forge: Seeded PR draft from issue #${issue.number}.`);
+}
+
+async function createBranchFromIssue(
+    workspaceFolder: vscode.WorkspaceFolder,
+    issue: IssueItem,
+): Promise<void> {
+    const baseBranch = getCurrentBranch(workspaceFolder.uri.fsPath);
+    const defaultName = `issue-${issue.number}-${slugifyIssueTitle(issue.title) || 'work'}`;
+    const branchName = (await vscode.window.showInputBox({
+        title: `Create branch from issue #${issue.number}`,
+        prompt: 'Branch name',
+        value: defaultName,
+        validateInput: value => value.trim() ? null : 'Branch name is required',
+    }))?.trim();
+    if (!branchName) {
+        return;
+    }
+
+    try {
+        execSync(`git switch -c ${JSON.stringify(branchName)}`, { cwd: workspaceFolder.uri.fsPath, stdio: 'pipe' });
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`PR Forge: Could not create branch "${branchName}" — ${msg}`);
+        return;
+    }
+
+    await refreshWorkspaceState();
+    vscode.window.showInformationMessage(`PR Forge: Created branch ${branchName} from issue #${issue.number}${baseBranch ? ` (base ${baseBranch})` : ''}.`);
+}
+
 async function refreshReadiness(silent = false): Promise<void> {
     const workspaceFolder = await resolveTargetProjectFolder();
     if (!workspaceFolder) {
@@ -1081,6 +1155,70 @@ async function openReviewThreads(): Promise<void> {
         }
     );
     return;
+}
+
+async function openIssueFlow(): Promise<void> {
+    const workspaceFolder = await resolveTargetProjectFolder();
+    if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+    if (!(await ensureConfig(workspaceFolder))) return;
+
+    const remote = await resolveRemoteContext(workspaceFolder);
+    if (!remote) { return; }
+
+    await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Loading issues...', cancellable: false },
+        async () => {
+            const issues = await remote.provider.listOpenIssues({ owner: remote.owner, repo: remote.repo });
+            if (issues.length === 0) {
+                vscode.window.showInformationMessage('PR Forge: No open issues found.');
+                return;
+            }
+
+            const pick = await vscode.window.showQuickPick(issues.map(issue => ({
+                label: `#${issue.number} ${issue.title}`,
+                description: issue.state ?? 'open',
+                detail: [issue.author ? `by ${issue.author}` : '', issue.updatedAt ? `updated ${issue.updatedAt}` : '', issue.labels?.length ? issue.labels.join(', ') : ''].filter(Boolean).join(' · '),
+                issue,
+            })), {
+                title: `PR Forge Issues - ${remote.owner}/${remote.repo}`,
+                placeHolder: 'Select an issue to seed a branch or PR',
+            });
+            if (!pick) {
+                return;
+            }
+
+            const action = await vscode.window.showQuickPick([
+                { label: 'Create Branch & Seed Draft PR', description: 'Create a branch and write PR files from this issue', actionType: 'branchAndDraft' as const },
+                { label: 'Create Branch Only', description: 'Just create a local branch from this issue', actionType: 'branchOnly' as const },
+                { label: 'Seed Draft PR Only', description: 'Write PR files from this issue on the current branch', actionType: 'draftOnly' as const },
+                { label: 'Open Issue in Browser', description: pick.issue.url, actionType: 'openIssue' as const },
+            ] as Array<vscode.QuickPickItem & { actionType: 'branchAndDraft' | 'branchOnly' | 'draftOnly' | 'openIssue'; issue?: IssueItem }>, {
+                title: `Issue #${pick.issue.number} ${pick.issue.title}`,
+                placeHolder: 'Choose how to use this issue',
+            });
+            if (!action) {
+                return;
+            }
+
+            if (action.actionType === 'openIssue') {
+                await vscode.env.openExternal(vscode.Uri.parse(pick.issue.url));
+                return;
+            }
+
+            if (action.actionType === 'branchAndDraft') {
+                await createBranchFromIssue(workspaceFolder, pick.issue);
+                await seedPrDraftFromIssue(workspaceFolder, pick.issue);
+                return;
+            }
+
+            if (action.actionType === 'branchOnly') {
+                await createBranchFromIssue(workspaceFolder, pick.issue);
+                return;
+            }
+
+            await seedPrDraftFromIssue(workspaceFolder, pick.issue);
+        }
+    );
 }
 
 async function submitPr(): Promise<void> {
@@ -1610,6 +1748,7 @@ export function activate(context: vscode.ExtensionContext): void {
         onSubmitPr: submitPr,
         onSubmitDraftPr: submitDraftPr,
         onOpenInbox: openInbox,
+        onOpenIssueFlow: openIssueFlow,
         onRefreshReadiness: () => refreshReadiness(),
         onSetApiKey: setApiKey,
         onShowTools: () => {
@@ -1766,6 +1905,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitPr', submitPr));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitDraftPr', submitDraftPr));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.openInbox', openInbox));
+    context.subscriptions.push(vscode.commands.registerCommand('prForge.openIssueFlow', () => { void openIssueFlow(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.openReviewThreads', () => { void openReviewThreads(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.postReview', () => { void postReviewToPr(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.postInlineReview', () => { void postInlineReview(); }));
