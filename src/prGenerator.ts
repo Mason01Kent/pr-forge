@@ -380,6 +380,118 @@ ${context}`,
   return parseFindingsJson(response);
 }
 
+/** Strip common branch-name prefixes and separators to produce a readable PR title. */
+function titleFromBranch(branch: string): string {
+  let t = branch
+    .replace(/^(feat|fix|chore|hotfix|release|refactor|docs|test|style|build|ci|perf|revert)[/\-]/i, '')
+    .replace(/[-_/]/g, ' ')
+    .trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/**
+ * Generate a structured PR body from raw git data, with no AI call.
+ * Used when no API key is configured so users can still produce a useful
+ * template to fill in manually.
+ */
+export async function generatePrBodyTemplate(opts: PrGeneratorOptions): Promise<PrGeneratorResult> {
+  const cwd = opts.workspacePath;
+  const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
+  const headSha = safeExec('git rev-parse HEAD', cwd).trim();
+  const title = titleFromBranch(branch);
+
+  opts.onLog(`Branch: ${branch}`);
+  opts.onLog('Generating template PR body (no AI — no API key configured)...');
+
+  // Commits
+  const rawCommits = safeExec(`git log ${opts.baseBranch}..HEAD --pretty=format:%h%x1f%s`, cwd).trim();
+  const commits = rawCommits
+    ? rawCommits.split('\n').map(l => {
+        const [sha, ...rest] = l.split('\x1f');
+        return { sha: sha.trim(), subject: rest.join('\x1f').trim() };
+      }).filter(c => c.sha)
+    : [];
+
+  // Changed files with status
+  const nameStatus = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
+  const STATUS_LABELS: Record<string, string> = {
+    M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied',
+  };
+  const changedFiles = nameStatus.split('\n').filter(Boolean).map(l => {
+    const parts = l.split('\t');
+    const status = STATUS_LABELS[parts[0]?.[0] ?? ''] ?? 'Changed';
+    const file = parts[parts.length - 1] ?? '';
+    return { file, status };
+  });
+
+  // Diffstat summary
+  const diffStat = safeExec(`git diff --stat ${opts.baseBranch}..HEAD`, cwd).trim();
+  const statSummary = diffStat.split('\n').pop()?.trim() ?? '';
+
+  // Test output
+  let testOutput = '(tests skipped)';
+  if (opts.runTests && opts.testCommand.trim()) {
+    opts.onLog('Running tests...');
+    testOutput = await runTestCommand(opts);
+    const TEST_CAP = 4_000;
+    if (testOutput.length > TEST_CAP) {
+      testOutput = `[...last ${TEST_CAP} chars]\n\n` + testOutput.slice(-TEST_CAP);
+    }
+    opts.onLog('Tests completed.');
+  }
+
+  // Sections that get auto-filled vs left as placeholders
+  const AUTO_SECTIONS = new Set(['summary', 'changes', 'commits', 'tests', 'tests / verification', 'test output']);
+  const sections = opts.prBodySections.length
+    ? opts.prBodySections
+    : ['Summary', 'Why this matters', 'Changes', 'Tests / verification', 'Risks / follow-ups'];
+
+  const parts: string[] = [];
+
+  for (const section of sections) {
+    const key = section.toLowerCase();
+    if (AUTO_SECTIONS.has(key)) { continue; } // rendered separately below
+    parts.push(`## ${section}\n\n<!-- Fill in -->`);
+  }
+
+  // Always render in a logical order
+  let body = `## Summary\n\n`;
+  body += `Branch \`${branch}\` → \`${opts.baseBranch}\``;
+  if (statSummary) { body += `\n\n${statSummary}`; }
+  body += '\n\n> _Generated without AI — fill in the sections below._\n';
+
+  if (changedFiles.length > 0) {
+    const rows = changedFiles
+      .slice(0, 50)
+      .map(f => `| \`${tableCell(f.file)}\` | ${f.status} |`)
+      .join('\n');
+    body += `\n\n## Changes\n\n| File | Status |\n| --- | --- |\n${rows}`;
+    if (changedFiles.length > 50) { body += `\n\n_…and ${changedFiles.length - 50} more files._`; }
+  }
+
+  if (commits.length > 0) {
+    const rows = commits.map(c => `| ${c.sha} | ${tableCell(c.subject)} |`).join('\n');
+    body += `\n\n## Commits\n\n| Commit | Message |\n| --- | --- |\n${rows}`;
+  }
+
+  // Extra sections (non-auto ones)
+  if (parts.length > 0) { body += '\n\n' + parts.join('\n\n'); }
+
+  // Tests
+  body += `\n\n## Tests / verification\n\n\`\`\`\n${testOutput.trim()}\n\`\`\``;
+
+  // Append generated tables if enabled
+  body = await appendGeneratedTables(opts, cwd, headSha, body);
+
+  const outputDir = path.join(cwd, opts.outputDirectory);
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(path.join(outputDir, 'PR_TITLE.txt'), title, 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'PR_BODY.md'), body, 'utf-8');
+  opts.onLog('Template PR body written (no AI).');
+
+  return { title, body, outputDir, branch, headSha, usage: { inputTokens: 0, outputTokens: 0 } };
+}
+
 export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorResult> {
   const cwd = opts.workspacePath;
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
