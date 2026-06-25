@@ -107,6 +107,16 @@ body {
   border: 1px solid rgba(204, 167, 0, 0.3);
 }
 
+/* ── No-key banner ───────────────────────────── */
+.no-key-banner {
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  background: rgba(204, 167, 0, 0.08);
+  border-bottom: 1px solid rgba(204, 167, 0, 0.25);
+}
+
 /* ── Sections ────────────────────────────────── */
 .section {
   display: flex;

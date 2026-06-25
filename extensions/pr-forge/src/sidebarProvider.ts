@@ -344,6 +344,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="card-row" id="submitted-pr-row" style="display:none"><span class="label">Submitted</span><button class="btn-link" id="btn-submitted-pr-link"></button></div>
   </div>
 
+  <div class="no-key-banner" id="no-key-banner" style="display:none">
+    <strong>No AI provider configured.</strong>
+    Commit summaries and file walkthrough will use raw git data. PR body, title, and review generation require an AI key — click <em>Set API Key</em> to add one.
+  </div>
+
   <div class="section">
     <div class="btn-row">
       <button class="btn btn-ghost" id="btn-set-key">Set API Key</button>
@@ -548,6 +553,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const noAuth = state.provider === 'ollama';
     keyBadge.textContent = noAuth ? 'Not needed' : (state.providerKeySet ? 'Set ✓' : 'Not set');
     keyBadge.className = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
+    el('no-key-banner').style.display = (!noAuth && !state.providerKeySet && state.configExists) ? '' : 'none';
 
     if (state.availableModels && state.availableModels.length > 0) {
       const sel = el('model-select');

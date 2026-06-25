@@ -122,20 +122,24 @@ async function buildCommitTable(
   }).join('\n\n');
 
   opts.onLog(`Summarising ${commits.length} commit(s)...`);
-  const response = await chatComplete(opts.llm, [
-    { role: 'system', content: `You summarise git commits for the ${opts.projectName} project. Output strict JSON only — no prose, no code fences.` },
-    {
-      role: 'user',
-      content: `For each commit below, write ONE concise sentence (max ~15 words, plain past tense) describing what it does.
+  let summaries: Record<string, string> = {};
+  try {
+    const response = await chatComplete(opts.llm, [
+      { role: 'system', content: `You summarise git commits for the ${opts.projectName} project. Output strict JSON only — no prose, no code fences.` },
+      {
+        role: 'user',
+        content: `For each commit below, write ONE concise sentence (max ~15 words, plain past tense) describing what it does.
 Return ONLY a JSON array, one object per commit in the same order:
 [{"sha":"<sha>","summary":"<one sentence>"}]
 
 Commits:
 ${context}`,
-    },
-  ], opts.signal);
-
-  const summaries = parseCommitSummaries(response);
+      },
+    ], opts.signal);
+    summaries = parseCommitSummaries(response);
+  } catch (err) {
+    opts.onLog(`AI commit summaries failed (${(err as Error).message}) — using commit subjects.`);
+  }
   const rows = commits.map(c => `| ${c.sha} | ${tableCell(summaries[c.sha] ?? c.subject)} |`).join('\n');
   return `${COMMITS_MARKER}\n## Commits\n\n| Commit | Summary |\n| --- | --- |\n${rows}${truncationNote}`;
 }
@@ -157,20 +161,19 @@ async function buildFileWalkthroughTable(opts: PrGeneratorOptions, cwd: string):
   }).join('\n\n');
 
   opts.onLog(`Summarising ${fileDiffs.length} changed file(s)...`);
-  const response = await chatComplete(opts.llm, [
-    { role: 'system', content: `You summarise file changes for the ${opts.projectName} project. Output strict JSON only — no prose, no code fences.` },
-    {
-      role: 'user',
-      content: `For each changed file below, write ONE concise sentence (max ~15 words) describing what changed in it.
+  let summaries: Record<string, string> = {};
+  try {
+    const response = await chatComplete(opts.llm, [
+      { role: 'system', content: `You summarise file changes for the ${opts.projectName} project. Output strict JSON only — no prose, no code fences.` },
+      {
+        role: 'user',
+        content: `For each changed file below, write ONE concise sentence (max ~15 words) describing what changed in it.
 Return ONLY a JSON array, one object per file in the same order:
 [{"file":"<path>","summary":"<one sentence>"}]
 
 ${context}`,
-    },
-  ], opts.signal);
-
-  let summaries: Record<string, string> = {};
-  try {
+      },
+    ], opts.signal);
     const match = response.match(/\[[\s\S]*\]/);
     if (match) {
       for (const item of JSON.parse(match[0]) as Array<{ file?: string; summary?: string }>) {
@@ -179,7 +182,9 @@ ${context}`,
         }
       }
     }
-  } catch { summaries = {}; }
+  } catch (err) {
+    opts.onLog(`AI file summaries failed (${(err as Error).message}) — listing files without summaries.`);
+  }
 
   const rows = fileDiffs.map(f => `| \`${tableCell(f.file)}\` | ${tableCell(summaries[f.file] ?? 'Changed')} |`).join('\n');
   return `${FILES_MARKER}\n## Changes\n\n| File | Summary |\n| --- | --- |\n${rows}${truncationNote}`;
