@@ -18,6 +18,7 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 - **Generate PR Review** - structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation
 - **Post Inline Review** - post a proper GitHub review with comments anchored to specific diff lines, plus committable one-line suggestions
 - **Post Review as PR Comment** - alternative: post the full review as a single comment on the submitted PR
+- **Seed from Issue** - browse open issues, then create a branch or seed a draft PR body from the selected issue
 - **Submit PR / Submit Draft PR** - create or update a pull request or merge request without leaving VS Code
 - **Metadata automation** - carry labels, assignees, reviewers, and milestone values into GitHub and GitLab submissions when configured
 - **Regenerate with feedback** - type an instruction in the Refine panel and hit Enter to revise the draft without re-running tests
@@ -71,11 +72,13 @@ DeepSeek · OpenAI · Anthropic · OpenRouter · Groq · Ollama (local, no key r
 
 ## SCM submission
 
-PR Forge supports **GitHub** and **GitLab** remotes.
+PR Forge supports **GitHub**, **GitHub Enterprise**, **GitLab**, and **GitLab self-managed** remotes.
 
-**GitHub** - uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to create or update pull requests. If a PR already exists for your branch, it offers to update the title and body instead of opening a duplicate. Draft PRs are supported. Labels, assignees, reviewers, and milestone values are applied after creation when configured.
+**GitHub** - uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to create or update pull requests. If a PR already exists for your branch, it offers to update the title and body instead of opening a duplicate. Draft PRs are supported. Labels, assignees, reviewers, milestone values, open issues, and review threads are surfaced through the GitHub API.
 
-**GitLab** - uses a personal access token (set via "Set API Key" -> "GitLab (SCM token)", api scope required) to create or update merge requests. Labels, assignees, reviewers, and milestone values are sent with the MR request when configured.
+**GitLab** - uses a personal access token (set via "Set API Key" -> "GitLab (SCM token)", api scope required) to create or update merge requests. Labels, assignees, reviewers, milestone values, open issues, and review threads are surfaced through the GitLab API, including self-managed instances reached through their host-specific API base URL.
+
+**Issue seeding** - open the issue flow from the sidebar or command palette, then choose to create a branch, seed a draft PR, or do both from the selected issue.
 
 Repository PR/MR templates are discovered automatically from common locations such as `.github/PULL_REQUEST_TEMPLATE`, `docs/PULL_REQUEST_TEMPLATE`, and `.gitlab/merge_request_templates`, and the generated body includes that guidance when present.
 

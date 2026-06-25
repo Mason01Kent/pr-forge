@@ -17,6 +17,14 @@ describe('parseRemote', () => {
     assert.strictEqual(result?.provider.name, 'GitHub');
   });
 
+  it('parses GitHub Enterprise remotes with an API base', () => {
+    const result = parseRemote('https://github.enterprise.local/owner/repo', 'token');
+    assert.strictEqual(result?.owner, 'owner');
+    assert.strictEqual(result?.repo, 'repo');
+    assert.strictEqual(result?.provider.name, 'GitHub');
+    assert.ok(((result?.provider as unknown as { baseUrl?: string })?.baseUrl ?? '').endsWith('/api/v3'));
+  });
+
   it('parses GitLab HTTPS remotes', () => {
     const result = parseRemote('https://gitlab.com/group/repo.git', 'token');
     assert.strictEqual(result?.owner, 'group');
@@ -29,6 +37,14 @@ describe('parseRemote', () => {
     assert.strictEqual(result?.owner, 'group');
     assert.strictEqual(result?.repo, 'repo');
     assert.strictEqual(result?.provider.name, 'GitLab');
+  });
+
+  it('parses GitLab self-managed remotes with an API base', () => {
+    const result = parseRemote('https://gitlab.company.local/group/subgroup/repo', 'token');
+    assert.strictEqual(result?.owner, 'group/subgroup');
+    assert.strictEqual(result?.repo, 'repo');
+    assert.strictEqual(result?.provider.name, 'GitLab');
+    assert.ok(((result?.provider as unknown as { baseUrl?: string })?.baseUrl ?? '').endsWith('/api/v4'));
   });
 
   it('returns null for unsupported remotes', () => {

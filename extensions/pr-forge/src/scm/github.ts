@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as https from 'https';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, ReadinessSummary, ReviewThread } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread } from './index';
 
 function ghRequest(
     baseUrl: string,
@@ -254,6 +254,43 @@ export class GitHubScmProvider implements ScmProvider {
                 url: item.html_url,
                 state: item.state,
                 draft: item.draft,
+                author: item.user?.login,
+                updatedAt: item.updated_at,
+                labels: item.labels?.map(label => label.name).filter((name): name is string => !!name) ?? [],
+            }];
+        });
+    }
+
+    async listOpenIssues(payload: { owner: string; repo: string }): Promise<IssueItem[]> {
+        const { owner, repo } = payload;
+        const { json } = await ghRequest(
+            this.baseUrl,
+            { path: `/repos/${enc(owner)}/${enc(repo)}/issues?state=open&per_page=100&sort=updated&direction=desc`, method: 'GET' },
+            this.token
+        );
+        if (!Array.isArray(json)) {
+            return [];
+        }
+        return json.flatMap((item: {
+            number?: number;
+            title?: string;
+            html_url?: string;
+            state?: string;
+            updated_at?: string;
+            user?: { login?: string };
+            labels?: Array<{ name?: string }>;
+            body?: string;
+            pull_request?: unknown;
+        }) => {
+            if (!item.number || !item.title || !item.html_url || item.pull_request) {
+                return [];
+            }
+            return [{
+                number: item.number,
+                title: item.title,
+                url: item.html_url,
+                body: item.body,
+                state: item.state,
                 author: item.user?.login,
                 updatedAt: item.updated_at,
                 labels: item.labels?.map(label => label.name).filter((name): name is string => !!name) ?? [],
