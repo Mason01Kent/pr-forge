@@ -24,7 +24,7 @@ Started: 2026-06-25
 - Compile: clean
 - Tests: 81 passing
 - VSIX: `pr-forge-1.4.0.vsix` built
-- Working tree: dirty with phase 14 WIP
+- Working tree: clean on `phase-14/inbox`
 
 ## Next recommended work
 
