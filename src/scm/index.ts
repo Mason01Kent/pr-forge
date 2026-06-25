@@ -35,6 +35,14 @@ export interface InboxItem {
     labels?: string[];
 }
 
+export interface ReadinessSummary {
+    state: 'ready' | 'blocked' | 'unknown';
+    summary: string;
+    blockers: string[];
+    info: string[];
+    updatedAt?: string;
+}
+
 export interface ScmProvider {
     /** Human-readable name for error messages. */
     name: string;
@@ -44,6 +52,8 @@ export interface ScmProvider {
     findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<PrResult | null>;
     /** List open PRs or MRs for the current repository. */
     listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]>;
+    /** Summarize merge readiness for a specific PR/MR. */
+    getReadiness(payload: { owner: string; repo: string; number: number }): Promise<ReadinessSummary>;
     /** Update title and body of an existing PR. */
     updatePr(payload: PrPayload & { number: number }): Promise<PrResult>;
     /** Post a plain comment on an existing PR/issue. Returns the comment URL. */

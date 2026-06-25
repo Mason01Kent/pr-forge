@@ -39,7 +39,7 @@ describe('parseRemote', () => {
     const result = parseRemote('https://github.com/owner/repo.git', 'token');
     assert.ok(result);
     assert.strictEqual(result!.provider.name, 'GitHub');
-    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'updatePr', 'postPrComment', 'createReview'] as const) {
+    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'updatePr', 'postPrComment', 'createReview'] as const) {
       assert.strictEqual(typeof result!.provider[method], 'function', `missing ${method}`);
     }
   });
@@ -65,7 +65,7 @@ describe('parseRemote', () => {
   it('GitLabScmProvider exposes the full SCM interface', () => {
     const provider = new GitLabScmProvider('tok');
     assert.strictEqual(provider.name, 'GitLab');
-    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'updatePr', 'postPrComment', 'createReview'] as const) {
+    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'updatePr', 'postPrComment', 'createReview'] as const) {
       assert.strictEqual(typeof provider[method], 'function', `missing ${method}`);
     }
   });

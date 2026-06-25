@@ -12,7 +12,7 @@ Started: 2026-06-25
 | Slice | Title | Status | Completed |
 |-------|-------|--------|-----------|
 | 14.1 | PR/MR inbox | complete | 2026-06-25 |
-| 14.2 | Merge readiness | pending | - |
+| 14.2 | Merge readiness | complete | 2026-06-25 |
 | 14.3 | Review operations | pending | - |
 | 14.4 | Issue and enterprise workflow | pending | - |
 
@@ -22,10 +22,10 @@ Started: 2026-06-25
 - Branch: `phase-14/inbox`
 - Lint: clean
 - Compile: clean
-- Tests: 81 passing
+- Tests: 83 passing
 - VSIX: `pr-forge-1.4.0.vsix` built
 - Working tree: clean on `phase-14/inbox`
 
 ## Next recommended work
 
-Slice 14.2 - Merge readiness
+Slice 14.3 - Review operations

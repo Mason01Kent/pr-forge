@@ -1,6 +1,6 @@
 import * as https from 'https';
 import * as http from 'http';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, ReadinessSummary } from './index';
 
 function glRequest(
     baseUrl: string,
@@ -54,6 +54,13 @@ function glHint(statusCode: number): string {
 
 function projectId(owner: string, repo: string): string {
     return encodeURIComponent(`${owner}/${repo}`);
+}
+
+function pushUnique(list: string[], value: string): void {
+    const normalized = value.trim();
+    if (normalized && !list.includes(normalized)) {
+        list.push(normalized);
+    }
 }
 
 type MergeRequestVersion = {
@@ -218,6 +225,102 @@ export class GitLabScmProvider implements ScmProvider {
                 labels: item.labels ?? [],
             }];
         });
+    }
+
+    async getReadiness(payload: { owner: string; repo: string; number: number }): Promise<ReadinessSummary> {
+        const { owner, repo, number } = payload;
+        const pid = projectId(owner, repo);
+        const blockers: string[] = [];
+        const info: string[] = [];
+        const updatedAt = new Date().toLocaleString();
+
+        const mrResp = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests/${number}`, 'GET');
+        if (mrResp.statusCode !== 200 || typeof mrResp.json !== 'object' || mrResp.json === null) {
+            throw new Error(`GitLab API error ${mrResp.statusCode}${glHint(mrResp.statusCode)}`);
+        }
+
+        const mr = mrResp.json as {
+            draft?: boolean;
+            work_in_progress?: boolean;
+            has_conflicts?: boolean;
+            blocking_discussions_resolved?: boolean;
+            detailed_merge_status?: string;
+            head_pipeline?: { status?: string };
+        };
+
+        if (mr.draft || mr.work_in_progress) {
+            blockers.push('Merge request is marked draft');
+        }
+        if (mr.has_conflicts) {
+            blockers.push('Merge request has conflicts');
+        }
+        if (mr.blocking_discussions_resolved === false) {
+            blockers.push('Blocking discussions are unresolved');
+        }
+
+        switch ((mr.detailed_merge_status ?? '').toLowerCase()) {
+            case 'can_be_merged':
+                pushUnique(info, 'GitLab reports the merge request can be merged');
+                break;
+            case 'checking':
+            case 'approvals_syncing':
+            case 'unchecked':
+                pushUnique(info, `Merge status: ${mr.detailed_merge_status}`);
+                break;
+            case 'cannot_be_merged':
+            case 'cannot_be_merged_recheck':
+            case 'merge_conflict':
+            case 'conflicts':
+                blockers.push('GitLab reports the merge request cannot be merged cleanly');
+                break;
+            case 'draft_status':
+            case 'draft':
+                blockers.push('Merge request is still in draft state');
+                break;
+            default:
+                if (mr.detailed_merge_status) {
+                    pushUnique(info, `Merge status: ${mr.detailed_merge_status}`);
+                }
+                break;
+        }
+
+        const pipelineStatus = mr.head_pipeline?.status?.toLowerCase();
+        if (pipelineStatus === 'success') {
+            pushUnique(info, 'Latest pipeline passed');
+        } else if (['failed', 'canceled', 'cancelled'].includes(pipelineStatus ?? '')) {
+            blockers.push('Latest pipeline failed');
+        } else if (['pending', 'running', 'created', 'preparing'].includes(pipelineStatus ?? '')) {
+            blockers.push(`Latest pipeline is ${pipelineStatus}`);
+        } else if (pipelineStatus) {
+            pushUnique(info, `Latest pipeline: ${pipelineStatus}`);
+        }
+
+        try {
+            const approvalsResp = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests/${number}/approvals`, 'GET');
+            if (approvalsResp.statusCode === 200 && typeof approvalsResp.json === 'object' && approvalsResp.json !== null) {
+                const approvals = approvalsResp.json as {
+                    approvals_left?: number;
+                    approvals_required?: number;
+                    approved_by?: Array<{ user?: { username?: string; name?: string } }>;
+                };
+                if (typeof approvals.approvals_left === 'number' && approvals.approvals_left > 0) {
+                    blockers.push(`${approvals.approvals_left} approval(s) required`);
+                }
+                if (typeof approvals.approvals_required === 'number' && approvals.approvals_required > 0) {
+                    pushUnique(info, `Approvals required: ${approvals.approvals_required}`);
+                }
+                const approvedBy = approvals.approved_by?.map(entry => entry.user?.username ?? entry.user?.name).filter((value): value is string => !!value) ?? [];
+                if (approvedBy.length > 0) {
+                    pushUnique(info, `Approved by: ${approvedBy.slice(0, 3).join(', ')}`);
+                }
+            }
+        } catch {
+            // Premium approval data is optional; keep the summary usable without it.
+        }
+
+        const state = blockers.length > 0 ? 'blocked' : (info.length > 0 ? 'ready' : 'unknown');
+        const summary = blockers[0] ?? info[0] ?? 'No readiness data available';
+        return { state, summary, blockers, info, updatedAt };
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {
