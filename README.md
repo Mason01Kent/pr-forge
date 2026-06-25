@@ -43,13 +43,16 @@ Most tools either *review* your PR or *manage* it. PR Forge does both: it author
 
 - **Generate PR Body** — AI-written title and description from your `base..HEAD` diff, commits, and optional test output
 - **Generate PR Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation
+- **Post Inline Review** — post a proper GitHub review with comments anchored to specific diff lines, plus committable one-line suggestions (same shape as Copilot's review, with your own model)
+- **Post Review as PR Comment** — alternative: post the full review as a single comment on the submitted PR
 - **Submit PR / Submit as Draft** — creates a GitHub pull request without leaving VS Code; draft PRs are supported
 - **Update existing PR** — detects an open PR for your branch and offers to update it instead of creating a duplicate
-- **Post Review as PR Comment** — posts the generated review as a single comment on the submitted PR (uses your existing GitHub sign-in, no extra cost)
-- **Live streaming preview** — tokens stream into the sidebar as the model writes; no waiting for the full response
-- **Regenerate with feedback** — type an instruction in the preview footer and hit Enter to revise the draft without re-running tests
+- **Regenerate with feedback** — type an instruction in the Refine panel to revise the draft without re-running tests
+- **File walkthrough** — opt-in `## Changes` per-file table appended to the PR body
+- **Commit summaries** — opt-in `## Commits` table with one AI-written line per commit
+- **Re-review on push** — opt-in: when new commits land on a branch with a submitted PR, PR Forge offers to re-run the review (accept or dismiss — no silent token spend)
 - **Model picker** — lists models from your provider's API; selection saved to `.pr-forge.json` automatically
-- **Cancellable generation** — cancel at any point from the progress notification or sidebar
+- **Cancellable generation** — cancel at any point from the sidebar or progress notification
 - **Multi-provider** — DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, Ollama
 - **API keys in SecretStorage** — stored securely in VS Code; never written to project files
 - **Project type detection** — seeds sensible defaults for .NET, Node, React, and Python projects
@@ -132,7 +135,7 @@ PR Forge uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to cr
 
 **GitHub only.** Non-GitHub remotes are rejected with a clear message. GitLab Merge Request support is planned.
 
-After a PR is submitted, **Post Review to PR** posts the generated review (`.pr/PR_REVIEW.md`) as a single comment — no Copilot and no extra cost.
+After a PR is submitted, use **Post Review to PR** for a single comment or **Post Inline Review** for line-anchored comments with committable suggestions — both use your existing GitHub token, no Copilot, no extra cost.
 
 ---
 
@@ -140,15 +143,15 @@ After a PR is submitted, **Post Review to PR** posts the generated review (`.pr/
 
 **Current limitations:**
 
-- GitHub only — no GitLab, Bitbucket, or Azure DevOps
-- Line-level diff comments are not yet supported; reviews post as a single PR comment
+- GitHub only — no GitLab, Bitbucket, or Azure DevOps submission yet
+- Multi-line committable suggestion ranges not yet supported (single-line only)
 - Single-workspace only
 
 **Planned:**
 
 - GitLab Merge Requests
 - GitHub Enterprise / custom host support
-- Line-level diff comments
+- Multi-line committable suggestions
 - Better onboarding and demo examples
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full feature backlog.
