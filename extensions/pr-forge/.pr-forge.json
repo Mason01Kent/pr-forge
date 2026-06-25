@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 8,
+  "projectName": "pr-forge",
+  "baseBranch": "main",
+  "projectType": "node",
+  "testCommand": "npm test",
+  "runTestsOnGenerate": true,
+  "includeRecentCommits": false,
+  "includeCommitSummaries": true,
+  "includeFileWalkthrough": true,
+  "reReviewOnPush": false,
+  "outputDirectory": ".pr",
+  "provider": "deepseek",
+  "defaultModel": "deepseek-chat",
+  "reviewRulesFiles": [
+    "AGENTS.md",
+    "README.md",
+    "docs/agent-guides/current-state.md"
+  ],
+  "templateFiles": [],
+  "prLabels": [],
+  "prReviewers": [],
+  "prAssignees": [],
+  "prMilestone": "",
+  "prRiskAreas": [
+    "security",
+    "tests",
+    "configuration",
+    "data integrity",
+    "deployment risk"
+  ],
+  "prBodySections": [
+    "Summary",
+    "Why this matters",
+    "Changes",
+    "Tests / verification",
+    "Review focus",
+    "Risks / follow-ups"
+  ]
+}

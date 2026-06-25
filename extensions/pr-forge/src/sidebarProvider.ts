@@ -60,6 +60,7 @@ type WebviewToExtMsg =
     | { command: 'showReview' }
     | { command: 'openPreviewPanel' }
     | { command: 'openReviewPanel' }
+    | { command: 'openReviewThreads' }
     | { command: 'copyPreviewTitle' }
     | { command: 'copyPreviewBody' }
     | { command: 'openPrUrl' }
@@ -97,6 +98,7 @@ export interface SidebarCallbacks {
     onShowReview: () => void;
     onOpenPreviewPanel: () => void;
     onOpenReviewPanel: () => void;
+    onOpenReviewThreads: () => void;
     onCopyPreviewTitle: (title: string) => void;
     onCopyPreviewBody: () => void;
     onOpenPrUrl: () => void;
@@ -395,6 +397,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <button class="btn btn-secondary" id="btn-open-inbox">${ic.preview}<span>Open Inbox</span></button>
   <button class="btn btn-secondary" id="btn-refresh-readiness">${ic.review}<span>Check Readiness</span></button>
   <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR</span></button>
+  <button class="btn btn-secondary" id="btn-open-review-threads" style="display:none">${ic.review}<span>Review Threads</span></button>
   <button class="btn btn-secondary" id="btn-post-review" style="display:none">${ic.review}<span>Post Review to PR</span></button>
   <button class="btn btn-secondary" id="btn-post-inline-review" style="display:none">${ic.review}<span>Post Inline Review</span></button>
   <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
@@ -459,7 +462,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-inbox','btn-refresh-readiness','btn-open-github','btn-post-review','btn-post-inline-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-inbox','btn-refresh-readiness','btn-open-github','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -474,6 +477,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-generated-open-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
   el('btn-generated-preview-body').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));
   el('btn-generated-preview-review').addEventListener('click', () => vscode.postMessage({ command: 'openReviewPanel' }));
+  el('btn-open-review-threads').addEventListener('click', () => vscode.postMessage({ command: 'openReviewThreads' }));
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-open-github').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-post-review').addEventListener('click', () => vscode.postMessage({ command: 'postReview' }));
@@ -714,12 +718,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-submit-draft-pr').title = _onBaseBranch ? 'Switch to a feature branch first' : (state.bodyExists ? '' : 'Generate a PR Body first');
     el('btn-clear-pr').style.display = state.bodyExists || state.reviewExists || state.lastRunStatus === 'error' ? '' : 'none';
     el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
+    el('btn-open-review-threads').style.display = state.submittedPrNumber ? '' : 'none';
     el('btn-post-review').style.display = state.reviewExists && state.submittedPrUrl ? '' : 'none';
     el('btn-post-review').title = 'Post the generated review as a comment on the submitted PR';
     el('btn-post-inline-review').style.display = state.submittedPrUrl ? '' : 'none';
     el('btn-post-inline-review').title = 'Generate and post line-anchored inline review comments on the submitted PR';
     el('btn-refresh-readiness').disabled = !!state.isRunning || !state.submittedPrNumber;
     el('btn-refresh-readiness').title = state.submittedPrNumber ? 'Refresh merge readiness from the remote host' : 'Submit a PR or MR first';
+    el('btn-open-review-threads').disabled = !!state.isRunning || !state.submittedPrNumber;
+    el('btn-open-review-threads').title = state.submittedPrNumber ? 'Browse review threads and comments for the submitted PR or merge request' : 'Submit a PR or merge request first';
 
     const hasGeneratedContent = state.bodyExists || state.reviewExists;
     const generatedCard = el('generated-content-card');

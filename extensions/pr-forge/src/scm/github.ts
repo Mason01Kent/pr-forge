@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as https from 'https';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, ReadinessSummary } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, ReadinessSummary, ReviewThread } from './index';
 
 function ghRequest(
     baseUrl: string,
@@ -66,6 +66,69 @@ function enc(s: string): string { return encodeURIComponent(s); }
 
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
+}
+
+function ghGraphqlEndpoint(baseUrl: string): string {
+    const trimmed = baseUrl.replace(/\/+$/, '');
+    if (/\/api\/v3$/i.test(trimmed)) {
+        return `${trimmed.replace(/\/api\/v3$/i, '/api')}/graphql`;
+    }
+    return `${trimmed}/graphql`;
+}
+
+function ghGraphqlRequest(
+    baseUrl: string,
+    token: string,
+    query: string,
+    variables: Record<string, unknown>,
+): Promise<{ statusCode: number; json: unknown }> {
+    return new Promise((resolve, reject) => {
+        const url = new URL(ghGraphqlEndpoint(baseUrl));
+        const mod = url.protocol === 'http:' ? http : https;
+        const body = JSON.stringify({ query, variables });
+        const headers: Record<string, string> = {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'pr-forge-vscode',
+            'X-GitHub-Api-Version': '2022-11-28',
+        };
+        headers['Content-Length'] = Buffer.byteLength(body).toString();
+
+        const req = mod.request(
+            {
+                hostname: url.hostname,
+                port: url.port || undefined,
+                path: url.pathname + url.search,
+                method: 'POST',
+                headers,
+            },
+            (res) => {
+                const chunks: Buffer[] = [];
+                res.on('data', (c: Buffer) => chunks.push(c));
+                res.on('end', () => {
+                    const raw = Buffer.concat(chunks).toString('utf-8');
+                    try {
+                        resolve({ statusCode: res.statusCode ?? 0, json: raw ? JSON.parse(raw) : {} });
+                    } catch {
+                        reject(new Error(`GitHub GraphQL API returned invalid JSON (status ${res.statusCode}): ${raw.slice(0, 200)}`));
+                    }
+                });
+            }
+        );
+        req.on('error', (err: Error) => reject(new Error(`Failed to reach GitHub GraphQL API: ${err.message}`)));
+        req.write(body);
+        req.end();
+    });
+}
+
+function firstLine(body: string): string {
+    return body.trim().split(/\r?\n/, 1)[0] ?? body.trim();
+}
+
+function summarizeThreadBody(body: string): string {
+    const summary = firstLine(body).trim();
+    return summary.length > 120 ? `${summary.slice(0, 117).trimEnd()}...` : summary;
 }
 
 function pushUnique(list: string[], value: string): void {
@@ -348,6 +411,101 @@ export class GitHubScmProvider implements ScmProvider {
         const state = blockers.length > 0 ? 'blocked' : (info.length > 0 ? 'ready' : 'unknown');
         const summary = blockers[0] ?? info[0] ?? 'No readiness data available';
         return { state, summary, blockers, info, updatedAt };
+    }
+
+    async listReviewThreads(payload: { owner: string; repo: string; number: number }): Promise<ReviewThread[]> {
+        const { owner, repo, number } = payload;
+        const query = `
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          path
+          line
+          isResolved
+          comments(first: 100) {
+            nodes {
+              body
+              url
+              createdAt
+              author { login }
+              path
+              line
+              originalLine
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+        const { statusCode, json } = await ghGraphqlRequest(this.baseUrl, this.token, query, { owner, repo, number });
+        if (statusCode !== 200 || typeof json !== 'object' || json === null) {
+            throw new Error(`GitHub GraphQL API error ${statusCode}${ghHint(statusCode)}`);
+        }
+        const data = json as {
+            errors?: Array<{ message?: string }>;
+            data?: {
+                repository?: {
+                    pullRequest?: {
+                        reviewThreads?: {
+                            nodes?: Array<{
+                                id?: string;
+                                path?: string;
+                                line?: number;
+                                isResolved?: boolean;
+                                comments?: {
+                                    nodes?: Array<{
+                                        body?: string;
+                                        url?: string;
+                                        createdAt?: string;
+                                        author?: { login?: string };
+                                        path?: string;
+                                        line?: number;
+                                        originalLine?: number;
+                                    }>;
+                                };
+                            }>;
+                        };
+                    };
+                };
+            };
+        };
+        if (Array.isArray(data.errors) && data.errors.length > 0) {
+            const message = data.errors.map(err => err.message ?? 'unknown GraphQL error').join('; ');
+            throw new Error(`GitHub GraphQL API error: ${message}`);
+        }
+        const threads = data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+        return threads.flatMap((thread, index) => {
+            const comments = thread.comments?.nodes?.filter((comment): comment is NonNullable<typeof comment> => !!comment && typeof comment.body === 'string') ?? [];
+            if (comments.length === 0) {
+                return [];
+            }
+            const firstComment = comments[0];
+            const path = thread.path ?? firstComment.path;
+            const line = thread.line ?? firstComment.line ?? firstComment.originalLine;
+            const threadState = thread.isResolved ? 'resolved' : 'unresolved';
+            const title = path
+                ? `${path}${typeof line === 'number' ? `:${line}` : ''}`
+                : `Review thread ${index + 1}`;
+            return [{
+                id: thread.id ?? `${path ?? 'thread'}:${line ?? index}`,
+                title: `${title} · ${threadState}`,
+                url: firstComment.url ?? `https://github.com/${owner}/${repo}/pull/${number}`,
+                path,
+                line: typeof line === 'number' ? line : undefined,
+                state: threadState,
+                actionable: !thread.isResolved,
+                comments: comments.map(comment => ({
+                    author: comment.author?.login ?? undefined,
+                    body: summarizeThreadBody(comment.body),
+                    url: comment.url ?? undefined,
+                    createdAt: comment.createdAt,
+                })),
+            }];
+        });
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {
