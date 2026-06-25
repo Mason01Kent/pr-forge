@@ -749,20 +749,7 @@ async function submitPrInternal(draft: boolean): Promise<void> {
         return;
     }
 
-    // GitHub auth: try VS Code built-in first, then GITHUB_TOKEN env var
-    let token: string | undefined;
-    try {
-        const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
-        token = session.accessToken;
-    } catch {
-        token = process.env.GITHUB_TOKEN;
-    }
-    if (!token) {
-        vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
-        return;
-    }
-
-    // Get remote URL
+    // Get remote URL first so we can choose the right auth method
     let remoteUrl: string;
     try {
         remoteUrl = execSync('git remote get-url origin', { cwd: workspaceFolder.uri.fsPath }).toString().trim();
@@ -770,7 +757,30 @@ async function submitPrInternal(draft: boolean): Promise<void> {
         vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?');
         return;
     }
-    const remote = parseRemote(remoteUrl, token!);
+
+    // Pick auth strategy based on remote host
+    const isGitLabRemote = /gitlab\.com/i.test(remoteUrl);
+    let token: string | undefined;
+    if (isGitLabRemote) {
+        token = (await getApiKey(extensionContext, 'gitlab')) ?? undefined;
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitLab token. Use "Set API Key" → "GitLab (SCM token)" to store your personal access token (api scope required).');
+            return;
+        }
+    } else {
+        try {
+            const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+            token = session.accessToken;
+        } catch {
+            token = process.env.GITHUB_TOKEN;
+        }
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
+            return;
+        }
+    }
+
+    const remote = parseRemote(remoteUrl, token);
     if (!remote) {
         vscode.window.showErrorMessage(`PR Forge: Unsupported remote host. Only GitHub and GitLab are supported. Remote: ${remoteUrl}`);
         return;
@@ -926,19 +936,7 @@ async function postReviewToPr(): Promise<void> {
         return;
     }
 
-    // GitHub auth: VS Code built-in first, then GITHUB_TOKEN.
-    let token: string | undefined;
-    try {
-        const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
-        token = session.accessToken;
-    } catch {
-        token = process.env.GITHUB_TOKEN;
-    }
-    if (!token) {
-        vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
-        return;
-    }
-
+    // Get remote URL first so we can choose the right auth method
     let remoteUrl: string;
     try {
         remoteUrl = execSync('git remote get-url origin', { cwd: workspaceFolder.uri.fsPath }).toString().trim();
@@ -946,9 +944,32 @@ async function postReviewToPr(): Promise<void> {
         vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?');
         return;
     }
+
+    // Pick auth strategy based on remote host
+    const isGitLabRemote = /gitlab\.com/i.test(remoteUrl);
+    let token: string | undefined;
+    if (isGitLabRemote) {
+        token = (await getApiKey(extensionContext, 'gitlab')) ?? undefined;
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitLab token. Use "Set API Key" → "GitLab (SCM token)" to store your personal access token (api scope required).');
+            return;
+        }
+    } else {
+        try {
+            const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+            token = session.accessToken;
+        } catch {
+            token = process.env.GITHUB_TOKEN;
+        }
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
+            return;
+        }
+    }
+
     const remote = parseRemote(remoteUrl, token);
     if (!remote) {
-        vscode.window.showErrorMessage('PR Forge: Unsupported remote. Only GitHub and GitLab are supported.');
+        vscode.window.showErrorMessage(`PR Forge: Unsupported remote host. Only GitHub and GitLab are supported. Remote: ${remoteUrl}`);
         return;
     }
 
@@ -1018,18 +1039,7 @@ async function postInlineReview(): Promise<void> {
         return;
     }
 
-    let token: string | undefined;
-    try {
-        const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
-        token = session.accessToken;
-    } catch {
-        token = process.env.GITHUB_TOKEN;
-    }
-    if (!token) {
-        vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
-        return;
-    }
-
+    // Get remote URL first so we can choose the right auth method
     let remoteUrl: string;
     try {
         remoteUrl = execSync('git remote get-url origin', { cwd }).toString().trim();
@@ -1037,8 +1047,31 @@ async function postInlineReview(): Promise<void> {
         vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?');
         return;
     }
+
+    // Pick auth strategy based on remote host
+    const isGitLabRemote = /gitlab\.com/i.test(remoteUrl);
+    let token: string | undefined;
+    if (isGitLabRemote) {
+        token = (await getApiKey(extensionContext, 'gitlab')) ?? undefined;
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitLab token. Use "Set API Key" → "GitLab (SCM token)" to store your personal access token (api scope required).');
+            return;
+        }
+    } else {
+        try {
+            const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+            token = session.accessToken;
+        } catch {
+            token = process.env.GITHUB_TOKEN;
+        }
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
+            return;
+        }
+    }
+
     const remote = parseRemote(remoteUrl, token);
-    if (!remote) { vscode.window.showErrorMessage('PR Forge: Unsupported remote. Only GitHub and GitLab are supported.'); return; }
+    if (!remote) { vscode.window.showErrorMessage(`PR Forge: Unsupported remote host. Only GitHub and GitLab are supported. Remote: ${remoteUrl}`); return; }
 
     const reviewPath = path.join(cwd, config.outputDirectory, 'PR_REVIEW.md');
     const summaryBody = fs.existsSync(reviewPath)

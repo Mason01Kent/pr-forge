@@ -50,6 +50,7 @@ export const PROVIDERS: Record<string, { displayName: string; baseUrl: string; n
   openrouter: { displayName: 'OpenRouter', baseUrl: 'https://openrouter.ai/api',         noAuth: false },
   groq:       { displayName: 'Groq',       baseUrl: 'https://api.groq.com/openai',       noAuth: false },
   ollama:     { displayName: 'Ollama (local)', baseUrl: 'http://localhost:11434',         noAuth: true  },
+  gitlab:     { displayName: 'GitLab (SCM token)', baseUrl: 'https://gitlab.com',        noAuth: false },
 };
 
 export const DEFAULT_MODELS: Record<string, string> = {
