@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as http from 'http';
 import { parseRemote, GitLabScmProvider } from '../scm';
 
 describe('parseRemote', () => {
@@ -68,4 +69,78 @@ describe('parseRemote', () => {
       assert.strictEqual(typeof provider[method], 'function', `missing ${method}`);
     }
   });
+});
+
+// Helper: spin up a one-shot HTTP server that responds with a fixed status + body
+function mockGlServer(statusCode: number, responseBody: unknown): Promise<{ url: string; close: () => void }> {
+    return new Promise((resolve) => {
+        const server = http.createServer((_req, res) => {
+            const body = JSON.stringify(responseBody);
+            res.writeHead(statusCode, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body).toString() });
+            res.end(body);
+        });
+        server.listen(0, '127.0.0.1', () => {
+            const addr = server.address() as { port: number };
+            resolve({ url: `http://127.0.0.1:${addr.port}`, close: () => server.close() });
+        });
+    });
+}
+
+describe('GitLabScmProvider', () => {
+    it('createPr returns url and number on 201', async () => {
+        const mock = await mockGlServer(201, { iid: 42, web_url: 'https://gitlab.com/g/r/-/merge_requests/42' });
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            const result = await provider.createPr({ owner: 'g', repo: 'r', title: 'T', body: 'B', head: 'feat', base: 'main', token: 'tok' });
+            assert.strictEqual(result.number, 42);
+            assert.ok(result.url.includes('42'));
+        } finally { mock.close(); }
+    });
+
+    it('createPr throws with hint on 422', async () => {
+        const mock = await mockGlServer(422, { message: 'Another open merge request already exists for this source branch' });
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            await assert.rejects(
+                () => provider.createPr({ owner: 'g', repo: 'r', title: 'T', body: 'B', head: 'feat', base: 'main', token: 'tok' }),
+                (err: Error) => { assert.ok(err.message.includes('422') || err.message.includes('Unprocessable') || err.message.includes('open merge request')); return true; }
+            );
+        } finally { mock.close(); }
+    });
+
+    it('findOpenPr returns null when empty array', async () => {
+        const mock = await mockGlServer(200, []);
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            const result = await provider.findOpenPr({ owner: 'g', repo: 'r', head: 'feat', token: 'tok' });
+            assert.strictEqual(result, null);
+        } finally { mock.close(); }
+    });
+
+    it('findOpenPr returns PrResult when MR exists', async () => {
+        const mock = await mockGlServer(200, [{ iid: 7, web_url: 'https://gitlab.com/g/r/-/merge_requests/7' }]);
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            const result = await provider.findOpenPr({ owner: 'g', repo: 'r', head: 'feat', token: 'tok' });
+            assert.strictEqual(result?.number, 7);
+        } finally { mock.close(); }
+    });
+
+    it('updatePr returns updated url on 200', async () => {
+        const mock = await mockGlServer(200, { iid: 5, web_url: 'https://gitlab.com/g/r/-/merge_requests/5' });
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            const result = await provider.updatePr({ owner: 'g', repo: 'r', title: 'New', body: 'B', head: 'feat', base: 'main', token: 'tok', number: 5 });
+            assert.strictEqual(result.number, 5);
+        } finally { mock.close(); }
+    });
+
+    it('postPrComment returns a url with the note id', async () => {
+        const mock = await mockGlServer(201, { id: 99, noteable_iid: 5 });
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            const result = await provider.postPrComment({ owner: 'g', repo: 'r', number: 5, body: 'LGTM' });
+            assert.ok(result.url.includes('99'));
+        } finally { mock.close(); }
+    });
 });
