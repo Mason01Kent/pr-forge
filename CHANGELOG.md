@@ -3,6 +3,18 @@
 All notable changes to PR Forge are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.2.0
+
+GitHub Copilot PR parity. Everything below is opt-in and uses your own model/provider and GitHub token — no Copilot.
+
+### Added
+- **Inline review comments** — a new "Post Inline Review" action posts a GitHub *Review* with comments anchored to specific lines (plus the prose review as the review body). Findings are generated from the diff on demand; lines are validated/snapped to the diff so the API never 422s, with a single-comment fallback if anchoring is unavailable.
+- **Committable suggestions** — inline comments can include an "Apply suggestion" block when the model proposes a one-line fix.
+- **File walkthrough** — an opt-in toggle that appends an AI-summarised `## Changes` per-file table to the PR body (`includeFileWalkthrough`).
+- **Commit summaries** — an opt-in `## Commits` table, one concise AI line per commit (`includeCommitSummaries`). Batched in a single call and cached per HEAD.
+- **Re-review on push** — an opt-in toggle (`reReviewOnPush`); when on and a PR is submitted, PR Forge notices new commits and offers (accept/dismiss) to re-run the review. No silent token spend.
+- The built-in markdown preview now renders GitHub-style pipe tables.
+
 ## 1.0.0
 
 First stable release. GitHub-first, solo-developer-focused, bring-your-own-model.

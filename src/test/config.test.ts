@@ -2,9 +2,22 @@ import * as assert from 'assert';
 import { migrateConfig } from '../config';
 
 describe('migrateConfig', () => {
-  it('sets schemaVersion to 2 when missing', () => {
+  it('sets schemaVersion to the latest when missing', () => {
     const result = migrateConfig({ projectName: 'test' });
-    assert.strictEqual(result.schemaVersion, 3);
+    assert.strictEqual(result.schemaVersion, 5);
+  });
+
+  it('sets includeCommitSummaries to false when missing', () => {
+    const result = migrateConfig({ schemaVersion: 3 });
+    assert.strictEqual(result.includeCommitSummaries, false);
+    assert.strictEqual(result.schemaVersion, 5);
+  });
+
+  it('sets includeFileWalkthrough and reReviewOnPush to false when upgrading to v5', () => {
+    const result = migrateConfig({ schemaVersion: 4 });
+    assert.strictEqual(result.includeFileWalkthrough, false);
+    assert.strictEqual(result.reReviewOnPush, false);
+    assert.strictEqual(result.schemaVersion, 5);
   });
 
   it('sets runTestsOnGenerate to true when missing', () => {
@@ -17,9 +30,9 @@ describe('migrateConfig', () => {
     assert.strictEqual(result.includeRecentCommits, false);
   });
 
-  it('preserves existing schemaVersion 2 fields', () => {
+  it('preserves existing fields while upgrading the schema', () => {
     const result = migrateConfig({ schemaVersion: 2, runTestsOnGenerate: false });
-    assert.strictEqual(result.schemaVersion, 3);
+    assert.strictEqual(result.schemaVersion, 5);
     assert.strictEqual(result.runTestsOnGenerate, false);
   });
 

@@ -2,7 +2,7 @@
   "name": "pr-forge",
   "displayName": "PR Forge",
   "description": "AI-powered pull request description and code review generator with inline progress, model picker, and one-click GitHub submission. Supports DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, and Ollama.",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "publisher": "masonkent",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -84,6 +84,10 @@
       {
         "command": "prForge.postReview",
         "title": "PR Forge: Post Review as PR Comment"
+      },
+      {
+        "command": "prForge.postInlineReview",
+        "title": "PR Forge: Post Inline Review to PR"
       },
       {
         "command": "prForge.setApiKey",

@@ -50,6 +50,30 @@ export function renderMarkdown(md: string): string {
             continue;
         }
 
+        // HTML comment line (e.g. the pr-forge:commits marker) — render nothing
+        if (/^<!--.*-->$/.test(raw.trim())) {
+            continue;
+        }
+
+        // GitHub-style pipe table: header row followed by a |---|---| separator
+        if (raw.trim().startsWith('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+            flushList();
+            const header = splitTableRow(raw);
+            i++; // consume separator
+            const bodyRows: string[][] = [];
+            while (i + 1 < lines.length && lines[i + 1].trim().startsWith('|')) {
+                i++;
+                bodyRows.push(splitTableRow(lines[i]));
+            }
+            let table = '<table><thead><tr>' + header.map(c => `<th>${inlineFormat(c)}</th>`).join('') + '</tr></thead><tbody>';
+            for (const r of bodyRows) {
+                table += '<tr>' + r.map(c => `<td>${inlineFormat(c)}</td>`).join('') + '</tr>';
+            }
+            table += '</tbody></table>';
+            out.push(table);
+            continue;
+        }
+
         // Headings
         const h4 = raw.match(/^####\s+(.+)/);
         const h3 = raw.match(/^###\s+(.+)/);
@@ -105,6 +129,20 @@ export function renderMarkdown(md: string): string {
 
     flushList();
     return out.join('\n');
+}
+
+/** True for a markdown table separator row like `| --- | :--: |`. */
+function isTableSeparator(line: string): boolean {
+    const t = line.trim();
+    return t.includes('-') && /^\|?[\s:|-]+\|[\s:|-]*$/.test(t);
+}
+
+/** Split a pipe-table row into trimmed cells, honouring escaped `\|`. */
+function splitTableRow(line: string): string[] {
+    let s = line.trim();
+    if (s.startsWith('|')) { s = s.slice(1); }
+    if (s.endsWith('|')) { s = s.slice(0, -1); }
+    return s.split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, '|'));
 }
 
 function inlineFormat(text: string): string {

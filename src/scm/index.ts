@@ -32,6 +32,22 @@ export interface ScmProvider {
     updatePr(payload: PrPayload & { number: number }): Promise<PrResult>;
     /** Post a plain comment on an existing PR/issue. Returns the comment URL. */
     postPrComment(payload: { owner: string; repo: string; number: number; body: string }): Promise<{ url: string }>;
+    /** Create a review with line-anchored inline comments. Returns the review URL. */
+    createReview(payload: {
+        owner: string;
+        repo: string;
+        number: number;
+        body: string;
+        comments: ReviewComment[];
+    }): Promise<{ url: string }>;
+}
+
+/** A single line-anchored inline review comment (GitHub line-based Reviews API). */
+export interface ReviewComment {
+    path: string;
+    line: number;
+    side: 'RIGHT' | 'LEFT';
+    body: string;
 }
 
 export { GitHubScmProvider } from './github';
