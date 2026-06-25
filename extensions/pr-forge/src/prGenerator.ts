@@ -2,11 +2,16 @@ import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { chatComplete, chatCompleteStream, getModelLimits, LLMClientOptions, UsageStats } from './llmClient';
+import { Finding, FileDiff, annotateDiff, parseFindingsJson } from './reviewComments';
 
 export interface PrGeneratorOptions {
   workspacePath: string;
   baseBranch: string;
   includeRecentCommits: boolean;
+  /** When true, append an AI-summarised "## Commits" table to the PR body. */
+  includeCommitSummaries: boolean;
+  /** When true, append an AI-summarised "## Changes" per-file walkthrough table. */
+  includeFileWalkthrough: boolean;
   outputDirectory: string;
   projectName: string;
   prRiskAreas: string[];
@@ -42,10 +47,169 @@ interface DiffCache {
   headSha: string;
   diffContext: string;
   testOutput: string;
+  /** Cached generated tables (depend only on headSha), reused on regenerate. */
+  commitTable?: string;
+  fileTable?: string;
 }
 let _diffCache: DiffCache | null = null;
 
 export function clearDiffCache(): void { _diffCache = null; }
+
+/** Markers that delimit auto-generated tables so they can be stripped on regenerate. */
+const FILES_MARKER = '<!-- pr-forge:files -->';
+const COMMITS_MARKER = '<!-- pr-forge:commits -->';
+const MAX_SUMMARISED_COMMITS = 40;
+const MAX_WALKTHROUGH_FILES = 40;
+
+/** Make a string safe for a single markdown table cell. */
+function tableCell(s: string): string {
+  return s.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|').trim();
+}
+
+/** Remove any previously appended PR Forge tables (files/commits) and trailing whitespace. */
+function stripGeneratedTables(body: string): string {
+  const indices = [body.indexOf(FILES_MARKER), body.indexOf(COMMITS_MARKER)].filter(i => i !== -1);
+  if (indices.length === 0) { return body; }
+  return body.slice(0, Math.min(...indices)).replace(/\n+$/, '');
+}
+
+/** Parse the model's JSON array of {sha, summary} into a sha->summary map (defensive). */
+function parseCommitSummaries(text: string): Record<string, string> {
+  try {
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) { return {}; }
+    const arr = JSON.parse(match[0]) as Array<{ sha?: string; summary?: string }>;
+    const out: Record<string, string> = {};
+    for (const item of arr) {
+      if (item && typeof item.sha === 'string' && typeof item.summary === 'string') {
+        out[item.sha.trim()] = item.summary.trim();
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Build an AI-summarised "## Commits" table for base..HEAD in a single LLM call.
+ * Returns '' when there are no commits. Plain short SHAs auto-link on GitHub.
+ */
+async function buildCommitTable(
+  opts: PrGeneratorOptions,
+  cwd: string,
+): Promise<string> {
+  const raw = safeExec(`git log ${opts.baseBranch}..HEAD --pretty=format:%h%x1f%s`, cwd).trim();
+  if (!raw) { return ''; }
+
+  let commits = raw.split('\n').map(line => {
+    const parts = line.split('\x1f');
+    return { sha: (parts[0] ?? '').trim(), subject: (parts.slice(1).join('\x1f') ?? '').trim() };
+  }).filter(c => c.sha);
+  if (commits.length === 0) { return ''; }
+
+  let truncationNote = '';
+  if (commits.length > MAX_SUMMARISED_COMMITS) {
+    truncationNote = `\n\n_Showing the ${MAX_SUMMARISED_COMMITS} most recent of ${commits.length} commits._`;
+    commits = commits.slice(0, MAX_SUMMARISED_COMMITS);
+  }
+
+  const context = commits.map(c => {
+    const files = safeExec(`git diff-tree --no-commit-id --name-only -r ${c.sha}`, cwd)
+      .trim().split('\n').filter(Boolean);
+    const fileList = files.slice(0, 12).join(', ') + (files.length > 12 ? `, +${files.length - 12} more` : '');
+    return `${c.sha} | ${c.subject}\nfiles: ${fileList || '(none)'}`;
+  }).join('\n\n');
+
+  opts.onLog(`Summarising ${commits.length} commit(s)...`);
+  const response = await chatComplete(opts.llm, [
+    { role: 'system', content: `You summarise git commits for the ${opts.projectName} project. Output strict JSON only — no prose, no code fences.` },
+    {
+      role: 'user',
+      content: `For each commit below, write ONE concise sentence (max ~15 words, plain past tense) describing what it does.
+Return ONLY a JSON array, one object per commit in the same order:
+[{"sha":"<sha>","summary":"<one sentence>"}]
+
+Commits:
+${context}`,
+    },
+  ], opts.signal);
+
+  const summaries = parseCommitSummaries(response);
+  const rows = commits.map(c => `| ${c.sha} | ${tableCell(summaries[c.sha] ?? c.subject)} |`).join('\n');
+  return `${COMMITS_MARKER}\n## Commits\n\n| Commit | Summary |\n| --- | --- |\n${rows}${truncationNote}`;
+}
+
+/** Build an AI-summarised "## Changes" per-file walkthrough table in a single LLM call. */
+async function buildFileWalkthroughTable(opts: PrGeneratorOptions, cwd: string): Promise<string> {
+  let fileDiffs = getFileDiffs(cwd, opts.baseBranch).filter(f => f.diff.trim());
+  if (fileDiffs.length === 0) { return ''; }
+
+  let truncationNote = '';
+  if (fileDiffs.length > MAX_WALKTHROUGH_FILES) {
+    truncationNote = `\n\n_Showing ${MAX_WALKTHROUGH_FILES} of ${fileDiffs.length} changed files._`;
+    fileDiffs = fileDiffs.slice(0, MAX_WALKTHROUGH_FILES);
+  }
+
+  const context = fileDiffs.map(f => {
+    const snippet = f.diff.length > 1500 ? f.diff.slice(0, 1500) + '\n[...]' : f.diff;
+    return `### ${f.file}\n${snippet}`;
+  }).join('\n\n');
+
+  opts.onLog(`Summarising ${fileDiffs.length} changed file(s)...`);
+  const response = await chatComplete(opts.llm, [
+    { role: 'system', content: `You summarise file changes for the ${opts.projectName} project. Output strict JSON only — no prose, no code fences.` },
+    {
+      role: 'user',
+      content: `For each changed file below, write ONE concise sentence (max ~15 words) describing what changed in it.
+Return ONLY a JSON array, one object per file in the same order:
+[{"file":"<path>","summary":"<one sentence>"}]
+
+${context}`,
+    },
+  ], opts.signal);
+
+  let summaries: Record<string, string> = {};
+  try {
+    const match = response.match(/\[[\s\S]*\]/);
+    if (match) {
+      for (const item of JSON.parse(match[0]) as Array<{ file?: string; summary?: string }>) {
+        if (item && typeof item.file === 'string' && typeof item.summary === 'string') {
+          summaries[item.file.trim()] = item.summary.trim();
+        }
+      }
+    }
+  } catch { summaries = {}; }
+
+  const rows = fileDiffs.map(f => `| \`${tableCell(f.file)}\` | ${tableCell(summaries[f.file] ?? 'Changed')} |`).join('\n');
+  return `${FILES_MARKER}\n## Changes\n\n| File | Summary |\n| --- | --- |\n${rows}${truncationNote}`;
+}
+
+/** Append the enabled generated tables (file walkthrough, then commits) to the body. */
+async function appendGeneratedTables(opts: PrGeneratorOptions, cwd: string, headSha: string, body: string): Promise<string> {
+  const cached = _diffCache && _diffCache.headSha === headSha ? _diffCache : null;
+  let result = stripGeneratedTables(body).replace(/\n+$/, '');
+
+  if (opts.includeFileWalkthrough) {
+    let table = cached?.fileTable ?? '';
+    if (!table) {
+      table = await buildFileWalkthroughTable(opts, cwd);
+      if (cached) { cached.fileTable = table; }
+    } else { opts.onLog('Using cached file walkthrough.'); }
+    if (table) { result += `\n\n${table}`; }
+  }
+
+  if (opts.includeCommitSummaries) {
+    let table = cached?.commitTable ?? '';
+    if (!table) {
+      table = await buildCommitTable(opts, cwd);
+      if (cached) { cached.commitTable = table; }
+    } else { opts.onLog('Using cached commit summaries.'); }
+    if (table) { result += `\n\n${table}`; }
+  }
+
+  return result;
+}
 
 function safeExec(cmd: string, cwd: string): string {
   try {
@@ -53,6 +217,23 @@ function safeExec(cmd: string, cwd: string): string {
   } catch {
     return '';
   }
+}
+
+/**
+ * Per-file unified diffs for base..HEAD, source files first and generated/noisy
+ * files last. Shared by PR generation and inline-review anchoring.
+ */
+export function getFileDiffs(cwd: string, baseBranch: string): { file: string; diff: string }[] {
+  const nameStatus = safeExec(`git diff --name-status ${baseBranch}..HEAD`, cwd);
+  const allFiles = nameStatus.split('\n').filter(Boolean).map(l => l.split('\t').pop() ?? '');
+  const ordered = [
+    ...allFiles.filter(f => !NOISY_PATTERNS.test(f)),
+    ...allFiles.filter(f => NOISY_PATTERNS.test(f)),
+  ];
+  return ordered.map(file => ({
+    file,
+    diff: safeExec(`git diff ${baseBranch}..HEAD -- "${file}"`, cwd),
+  }));
 }
 
 function runTestCommand(opts: PrGeneratorOptions): Promise<string> {
@@ -153,6 +334,47 @@ async function buildDiffContext(
   return summaries.join('\n\n');
 }
 
+/**
+ * Generate structured, line-anchored review findings from per-file diffs in a
+ * single LLM call. Diffs are annotated with new-file line numbers so the model
+ * references exact lines. Returns [] on parse failure (caller degrades gracefully).
+ */
+export async function generateInlineFindings(
+  llm: LLMClientOptions,
+  fileDiffs: FileDiff[],
+  projectName: string,
+  onLog: (msg: string) => void,
+  signal?: AbortSignal,
+): Promise<Finding[]> {
+  const annotated = fileDiffs
+    .filter(f => f.diff.trim())
+    .map(f => `### ${f.file}\n${annotateDiff(f.diff)}`)
+    .join('\n\n');
+  if (!annotated.trim()) { return []; }
+
+  const limits = getModelLimits(llm.model);
+  const budget = Math.max(limits.inputBudgetChars - 20_000, 30_000);
+  const context = annotated.length > budget ? annotated.slice(0, budget) + '\n[...diff truncated]' : annotated;
+
+  onLog('Generating inline review findings...');
+  const response = await chatComplete(llm, [
+    { role: 'system', content: `You are a senior engineer reviewing a diff for the ${projectName} project. Output strict JSON only — no prose, no code fences.` },
+    {
+      role: 'user',
+      content: `Review the annotated diff below. Each changed line is prefixed with "<lineNumber>\\t" giving its line number in the NEW file. Report only real, specific issues (bugs, security, correctness, clear improvements).
+
+Return ONLY a JSON array, one object per finding:
+[{"file":"<path>","line":<new-file line number>,"severity":"blocking|suggestion|nit|security","comment":"<one concise sentence>","suggestion":"<optional: replacement for exactly that one line>"}]
+
+Use the exact line numbers shown. Omit "suggestion" unless it replaces exactly that single line. If there are no issues, return [].
+
+${context}`,
+    },
+  ], signal);
+
+  return parseFindingsJson(response);
+}
+
 export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorResult> {
   const cwd = opts.workspacePath;
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
@@ -177,16 +399,8 @@ export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorR
     testOutput = _diffCache.testOutput;
   } else {
     // Collect per-file diffs — source files first, generated files last
-    const allFiles = files.split('\n').filter(Boolean).map(l => l.split('\t').pop() ?? '');
-    const ordered  = [
-      ...allFiles.filter(f => !NOISY_PATTERNS.test(f)),
-      ...allFiles.filter(f =>  NOISY_PATTERNS.test(f)),
-    ];
-    const fileDiffs = ordered.map(file => ({
-      file,
-      diff: safeExec(`git diff ${opts.baseBranch}..HEAD -- "${file}"`, cwd),
-    }));
-    opts.onLog(`Files changed: ${allFiles.length}`);
+    const fileDiffs = getFileDiffs(cwd, opts.baseBranch);
+    opts.onLog(`Files changed: ${fileDiffs.length}`);
 
     diffContext = await buildDiffContext(fileDiffs, opts.llm, opts.projectName, opts.onLog, opts.signal);
 
@@ -295,6 +509,9 @@ Write in markdown. Be specific about what changed and why.`,
   }, opts.signal);
   accumulateUsage(bodyUsage);
   opts.onLog('PR body generated.');
+
+  // Optional: AI-summarised file walkthrough + commits tables appended to the body
+  body = await appendGeneratedTables(opts, cwd, headSha, body);
 
   // Generate PR review (optional) — also streamed
   let review: string | undefined;
@@ -417,12 +634,15 @@ Write in markdown. Be specific about what changed and why.`;
   const regenUsage = await chatCompleteStream(opts.llm, [
     { role: 'system', content: systemPrompt },
     { role: 'user',      content: originalUserMessage },
-    { role: 'assistant', content: previousDraft },
+    { role: 'assistant', content: stripGeneratedTables(previousDraft) },
     { role: 'user',      content: instruction },
   ], (delta) => {
     body += delta;
     opts.onToken?.(delta);
   }, opts.signal);
+
+  // Re-append the generated tables (reuses the cached ones for this headSha)
+  body = await appendGeneratedTables(opts, cwd, headSha, body);
 
   // Re-generate title from the new body
   const title = await chatComplete(opts.llm, [

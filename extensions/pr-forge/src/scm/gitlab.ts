@@ -1,4 +1,4 @@
-import { ScmProvider, PrPayload, PrResult } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment } from './index';
 
 /**
  * GitLab SCM provider — creates Merge Requests via the GitLab REST API.
@@ -23,5 +23,9 @@ export class GitLabScmProvider implements ScmProvider {
 
     async postPrComment(_payload: { owner: string; repo: string; number: number; body: string }): Promise<{ url: string }> {
         throw new Error('GitLab comment posting is not yet implemented in PR Forge.');
+    }
+
+    async createReview(_payload: { owner: string; repo: string; number: number; body: string; comments: ReviewComment[] }): Promise<{ url: string }> {
+        throw new Error('GitLab review creation is not yet implemented in PR Forge.');
     }
 }

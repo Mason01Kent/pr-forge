@@ -10,6 +10,9 @@ export interface SidebarState {
     currentModel: string | null;
     runTestsOnGenerate: boolean;
     includeRecentCommits: boolean;
+    includeCommitSummaries: boolean;
+    includeFileWalkthrough: boolean;
+    reReviewOnPush: boolean;
     lastRunType: 'prBody' | 'prReview' | null;
     lastRunStatus: 'success' | 'error' | null;
     lastRunTimestamp: string | null;
@@ -54,10 +57,14 @@ type WebviewToExtMsg =
     | { command: 'copyPreviewBody' }
     | { command: 'openPrUrl' }
     | { command: 'postReview' }
+    | { command: 'postInlineReview' }
     | { command: 'clearPr' }
     | { command: 'setModel'; model: string }
     | { command: 'setRunTests'; value: boolean }
     | { command: 'setIncludeRecentCommits'; value: boolean }
+    | { command: 'setCommitSummaries'; value: boolean }
+    | { command: 'setFileWalkthrough'; value: boolean }
+    | { command: 'setReReviewOnPush'; value: boolean }
     | { command: 'regenerate'; instruction: string }
     | { command: 'cancel' };
 
@@ -85,11 +92,15 @@ export interface SidebarCallbacks {
     onCopyPreviewBody: () => void;
     onOpenPrUrl: () => void;
     onPostReview: () => void;
+    onPostInlineReview: () => void;
     onClearPr: () => void;
     onCancel: () => void;
     onSetModel: (model: string) => void;
     onSetRunTests: (value: boolean) => void;
     onSetIncludeRecentCommits: (value: boolean) => void;
+    onSetCommitSummaries: (value: boolean) => void;
+    onSetFileWalkthrough: (value: boolean) => void;
+    onSetReReviewOnPush: (value: boolean) => void;
     onRegenerate: (instruction: string) => Promise<void>;
 }
 
@@ -106,6 +117,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         currentModel: null,
         runTestsOnGenerate: true,
         includeRecentCommits: false,
+        includeCommitSummaries: false,
+        includeFileWalkthrough: false,
+        reReviewOnPush: false,
         lastRunType: null,
         lastRunStatus: null,
         lastRunTimestamp: null,
@@ -207,6 +221,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'postReview':
                     this._callbacks.onPostReview();
                     break;
+                case 'postInlineReview':
+                    this._callbacks.onPostInlineReview();
+                    break;
                 case 'clearPr':
                     this._callbacks.onClearPr();
                     break;
@@ -221,6 +238,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'setIncludeRecentCommits':
                     this._callbacks.onSetIncludeRecentCommits(msg.value);
+                    break;
+                case 'setCommitSummaries':
+                    this._callbacks.onSetCommitSummaries(msg.value);
+                    break;
+                case 'setFileWalkthrough':
+                    this._callbacks.onSetFileWalkthrough(msg.value);
+                    break;
+                case 'setReReviewOnPush':
+                    this._callbacks.onSetReReviewOnPush(msg.value);
                     break;
                 case 'regenerate':
                     this._callbacks.onRegenerate(msg.instruction);
@@ -309,6 +335,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="card-row" id="model-row" style="display:none"><span class="label">Model</span><select class="select-model" id="model-select"></select></div>
     <div class="card-row" id="run-tests-row" style="display:none"><span class="label">Run tests</span><label class="toggle"><input type="checkbox" id="chk-run-tests" checked><span class="toggle-label" id="run-tests-label">On</span></label></div>
     <div class="card-row" id="commit-row" style="display:none"><span class="label">Recent commits</span><label class="toggle"><input type="checkbox" id="chk-commits"><span class="toggle-label" id="commits-label">Off</span></label></div>
+    <div class="card-row" id="commit-summary-row" style="display:none"><span class="label">Commit summaries</span><label class="toggle"><input type="checkbox" id="chk-commit-summaries"><span class="toggle-label" id="commit-summaries-label">Off</span></label></div>
+    <div class="card-row" id="file-walkthrough-row" style="display:none"><span class="label">File walkthrough</span><label class="toggle"><input type="checkbox" id="chk-file-walkthrough"><span class="toggle-label" id="file-walkthrough-label">Off</span></label></div>
+    <div class="card-row" id="rereview-row" style="display:none"><span class="label">Re-review on push</span><label class="toggle"><input type="checkbox" id="chk-rereview"><span class="toggle-label" id="rereview-label">Off</span></label></div>
     <div class="card-row" id="branch-row" style="display:none"><span class="label">Branch</span><span class="value" id="branch-name"></span></div>
     <div class="card-row" id="last-run-row" style="display:none"><span class="label">Last run</span><span class="value" id="last-run-info"></span></div>
     <div class="card-row" id="generated-title-row" style="display:none"><span class="label">Title</span><span class="value gh-pr-title-bar-text" id="generated-title-text"></span></div>
@@ -335,6 +364,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
   <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR on GitHub</span></button>
   <button class="btn btn-secondary" id="btn-post-review" style="display:none">${ic.review}<span>Post Review to PR</span></button>
+  <button class="btn btn-secondary" id="btn-post-inline-review" style="display:none">${ic.review}<span>Post Inline Review</span></button>
   <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
   </div>
 
@@ -394,7 +424,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-post-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-post-review','btn-post-inline-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -410,6 +440,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-open-github').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-post-review').addEventListener('click', () => vscode.postMessage({ command: 'postReview' }));
+  el('btn-post-inline-review').addEventListener('click', () => vscode.postMessage({ command: 'postInlineReview' }));
   el('btn-clear-pr').addEventListener('click', () => vscode.postMessage({ command: 'clearPr' }));
   el('btn-activity-cancel').addEventListener('click', () => vscode.postMessage({ command: 'cancel' }));
   el('model-select').addEventListener('change', (e) => vscode.postMessage({ command: 'setModel', model: e.target.value }));
@@ -420,6 +451,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('chk-commits').addEventListener('change', (e) => {
     el('commits-label').textContent = e.target.checked ? 'On' : 'Off';
     vscode.postMessage({ command: 'setIncludeRecentCommits', value: e.target.checked });
+  });
+  el('chk-commit-summaries').addEventListener('change', (e) => {
+    el('commit-summaries-label').textContent = e.target.checked ? 'On' : 'Off';
+    vscode.postMessage({ command: 'setCommitSummaries', value: e.target.checked });
+  });
+  el('chk-file-walkthrough').addEventListener('change', (e) => {
+    el('file-walkthrough-label').textContent = e.target.checked ? 'On' : 'Off';
+    vscode.postMessage({ command: 'setFileWalkthrough', value: e.target.checked });
+  });
+  el('chk-rereview').addEventListener('change', (e) => {
+    el('rereview-label').textContent = e.target.checked ? 'On' : 'Off';
+    vscode.postMessage({ command: 'setReReviewOnPush', value: e.target.checked });
   });
 
   el('btn-back').addEventListener('click', () => vscode.postMessage({ command: 'showTools' }));
@@ -521,9 +564,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('chk-commits').checked = state.includeRecentCommits === true;
       el('commits-label').textContent = state.includeRecentCommits === true ? 'On' : 'Off';
       el('commit-row').style.display = '';
+      el('chk-commit-summaries').checked = state.includeCommitSummaries === true;
+      el('commit-summaries-label').textContent = state.includeCommitSummaries === true ? 'On' : 'Off';
+      el('commit-summary-row').style.display = '';
+      el('chk-file-walkthrough').checked = state.includeFileWalkthrough === true;
+      el('file-walkthrough-label').textContent = state.includeFileWalkthrough === true ? 'On' : 'Off';
+      el('file-walkthrough-row').style.display = '';
+      el('chk-rereview').checked = state.reReviewOnPush === true;
+      el('rereview-label').textContent = state.reReviewOnPush === true ? 'On' : 'Off';
+      el('rereview-row').style.display = '';
     } else {
       el('run-tests-row').style.display = 'none';
       el('commit-row').style.display = 'none';
+      el('commit-summary-row').style.display = 'none';
+      el('file-walkthrough-row').style.display = 'none';
+      el('rereview-row').style.display = 'none';
     }
 
     if (state.lastGeneratedAt || state.lastRunTimestamp) {
@@ -583,6 +638,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
     el('btn-post-review').style.display = state.reviewExists && state.submittedPrUrl ? '' : 'none';
     el('btn-post-review').title = 'Post the generated review as a comment on the submitted PR';
+    el('btn-post-inline-review').style.display = state.submittedPrUrl ? '' : 'none';
+    el('btn-post-inline-review').title = 'Generate and post line-anchored inline review comments on the submitted PR';
 
     const hasGeneratedContent = state.bodyExists || state.reviewExists;
     const generatedCard = el('generated-content-card');

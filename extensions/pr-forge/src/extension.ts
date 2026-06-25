@@ -5,7 +5,8 @@ import { execSync } from 'child_process';
 import { SidebarProvider } from './sidebarProvider';
 import { PreviewPanel, PreviewContent } from './previewPanel';
 import { renderMarkdown } from './markdownRenderer';
-import { generatePr, regeneratePr, clearDiffCache } from './prGenerator';
+import { generatePr, regeneratePr, clearDiffCache, generateInlineFindings, getFileDiffs } from './prGenerator';
+import { mapFindingsToComments, findingsToFallbackComment } from './reviewComments';
 import { PrForgeConfig, migrateConfig } from './config';
 import { PROVIDERS, DEFAULT_MODELS, UsageStats } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
@@ -24,6 +25,9 @@ let statusBarPrBody: vscode.StatusBarItem;
 let statusBarPrReview: vscode.StatusBarItem;
 let provider: SidebarProvider;
 let lastPreviewMarkdown = '';
+let reReviewTimer: ReturnType<typeof setInterval> | undefined;
+let reReviewLastSha: string | undefined;
+let reReviewPrompting = false;
 let lastBodyContent: PreviewContent | undefined;
 let lastReviewContent: PreviewContent | undefined;
 let activeAbortController: AbortController | undefined;
@@ -242,7 +246,11 @@ async function refreshWorkspaceState(): Promise<void> {
         currentModel: cfg.defaultModel,
         runTestsOnGenerate: cfg.runTestsOnGenerate ?? true,
         includeRecentCommits: cfg.includeRecentCommits ?? false,
+        includeCommitSummaries: cfg.includeCommitSummaries ?? false,
+        includeFileWalkthrough: cfg.includeFileWalkthrough ?? false,
+        reReviewOnPush: cfg.reReviewOnPush ?? false,
     });
+    updateReReviewWatcher(cfg.reReviewOnPush ?? false);
     const hasArtifacts = fs.existsSync(path.join(wf.uri.fsPath, cfg.outputDirectory, 'PR_BODY.md')) || fs.existsSync(path.join(wf.uri.fsPath, cfg.outputDirectory, 'PR_REVIEW.md'));
     if (hasArtifacts) {
         updateArtifactState(wf, cfg);
@@ -421,8 +429,9 @@ async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder):
         ? ['authentication', 'authorization', 'ownership isolation', 'PostgreSQL migrations', 'decimal money handling', 'inventory transactions', 'refunds', 'production readiness', 'config/secrets safety']
         : ['security', 'tests', 'configuration', 'data integrity', 'deployment risk'];
     const config: PrForgeConfig = {
-        schemaVersion: 3, projectName, baseBranch: 'main', projectType,
+        schemaVersion: 5, projectName, baseBranch: 'main', projectType,
         testCommand: testCommands[projectType] || '', runTestsOnGenerate: true, includeRecentCommits: false,
+        includeCommitSummaries: false, includeFileWalkthrough: false, reReviewOnPush: false,
         outputDirectory: '.pr',
         provider: 'deepseek', defaultModel: 'deepseek-chat',
         reviewRulesFiles, prRiskAreas,
@@ -487,6 +496,8 @@ async function generatePrBody(): Promise<void> {
                         workspacePath: workspaceFolder.uri.fsPath,
                         baseBranch: config.baseBranch,
                         includeRecentCommits: config.includeRecentCommits ?? false,
+                        includeCommitSummaries: config.includeCommitSummaries ?? false,
+                        includeFileWalkthrough: config.includeFileWalkthrough ?? false,
                         outputDirectory: config.outputDirectory,
                         projectName: config.projectName,
                         prRiskAreas: config.prRiskAreas,
@@ -573,6 +584,8 @@ async function generatePrReview(): Promise<void> {
                         workspacePath: workspaceFolder.uri.fsPath,
                         baseBranch: config.baseBranch,
                         includeRecentCommits: config.includeRecentCommits ?? false,
+                        includeCommitSummaries: config.includeCommitSummaries ?? false,
+                        includeFileWalkthrough: config.includeFileWalkthrough ?? false,
                         outputDirectory: config.outputDirectory,
                         projectName: config.projectName,
                         prRiskAreas: config.prRiskAreas,
@@ -652,6 +665,8 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
                         workspacePath: workspaceFolder.uri.fsPath,
                         baseBranch: config.baseBranch,
                         includeRecentCommits: config.includeRecentCommits ?? false,
+                        includeCommitSummaries: config.includeCommitSummaries ?? false,
+                        includeFileWalkthrough: config.includeFileWalkthrough ?? false,
                         outputDirectory: config.outputDirectory,
                         projectName: config.projectName,
                         prRiskAreas: config.prRiskAreas,
@@ -968,6 +983,153 @@ async function postReviewToPr(): Promise<void> {
     );
 }
 
+async function postInlineReview(): Promise<void> {
+    const workspaceFolder = await resolveTargetProjectFolder();
+    if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+    const config = readConfig(workspaceFolder);
+    if (!config) { vscode.window.showErrorMessage('PR Forge: No config found.'); return; }
+    const cwd = workspaceFolder.uri.fsPath;
+
+    const prNumber = provider.getState().submittedPrNumber;
+    if (!prNumber) {
+        vscode.window.showErrorMessage('PR Forge: Submit the PR first, then post an inline review to it.');
+        return;
+    }
+
+    // Inline comments anchor to the pushed PR head — local HEAD must match the upstream.
+    const headSha = getCurrentBranch(cwd) ? execSync('git rev-parse HEAD', { cwd }).toString().trim() : '';
+    let upstreamSha = '';
+    try { upstreamSha = execSync('git rev-parse @{u}', { cwd }).toString().trim(); } catch { /* no upstream */ }
+    if (!upstreamSha || upstreamSha !== headSha) {
+        const push = await vscode.window.showWarningMessage(
+            'PR Forge: Your local commits are not all pushed. Inline comments anchor to the pushed PR head. Push now?',
+            'Push', 'Cancel'
+        );
+        if (push !== 'Push') { return; }
+        try {
+            execSync('git push', { cwd });
+        } catch (err: unknown) {
+            vscode.window.showErrorMessage(`PR Forge: Failed to push — ${err instanceof Error ? err.message : String(err)}`);
+            return;
+        }
+    }
+
+    const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
+    const providerInfo = PROVIDERS[config.provider];
+    if (!providerInfo?.noAuth && !apiKey) {
+        vscode.window.showErrorMessage(`PR Forge: No API key set for ${config.provider}.`);
+        return;
+    }
+
+    let token: string | undefined;
+    try {
+        const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+        token = session.accessToken;
+    } catch {
+        token = process.env.GITHUB_TOKEN;
+    }
+    if (!token) {
+        vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
+        return;
+    }
+
+    let remoteUrl: string;
+    try {
+        remoteUrl = execSync('git remote get-url origin', { cwd }).toString().trim();
+    } catch {
+        vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?');
+        return;
+    }
+    const remote = parseRemote(remoteUrl, token);
+    if (!remote) { vscode.window.showErrorMessage('PR Forge supports GitHub only.'); return; }
+
+    const reviewPath = path.join(cwd, config.outputDirectory, 'PR_REVIEW.md');
+    const summaryBody = fs.existsSync(reviewPath)
+        ? fs.readFileSync(reviewPath, 'utf-8').trim()
+        : '_PR Forge inline review._';
+
+    const t0 = Date.now();
+    await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `PR Forge: Posting inline review to PR #${prNumber}...`, cancellable: true },
+        async (_progress, progressToken) => {
+            const abort = new AbortController();
+            progressToken.onCancellationRequested(() => abort.abort());
+            try {
+                const fileDiffs = getFileDiffs(cwd, config.baseBranch);
+                if (fileDiffs.length === 0) {
+                    vscode.window.showInformationMessage('PR Forge: No diff against the base branch to review.');
+                    return;
+                }
+                const findings = await generateInlineFindings({ provider: config.provider, apiKey, model: config.defaultModel }, fileDiffs, config.projectName, log, abort.signal);
+                if (findings.length === 0) {
+                    vscode.window.showInformationMessage('PR Forge: The model reported no inline findings.');
+                    return;
+                }
+                const { comments, dropped } = mapFindingsToComments(findings, fileDiffs);
+                if (dropped > 0) { log(`Dropped ${dropped} finding(s) that did not map to a commentable diff line.`); }
+
+                const footer = `\n\n---\n_Inline review by [PR Forge](https://github.com/Mason01Kent/pr-forge)._`;
+                try {
+                    if (comments.length === 0) { throw new Error('no anchorable comments'); }
+                    const { url } = await remote.provider.createReview({ owner: remote.owner, repo: remote.repo, number: prNumber, body: summaryBody + footer, comments });
+                    log(`Inline review posted to PR #${prNumber} (${comments.length} comment(s)): ${url}`);
+                    telemetryEvent('postInlineReview', { outcome: 'success' }, { durationMs: Date.now() - t0, comments: comments.length, dropped });
+                    const open = await vscode.window.showInformationMessage(`Inline review posted to PR #${prNumber} (${comments.length} comment(s)).`, 'Open in Browser');
+                    if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(url)); }
+                } catch (reviewErr: unknown) {
+                    // Graceful fallback: post the findings as one combined comment.
+                    log(`Inline review failed (${reviewErr instanceof Error ? reviewErr.message : String(reviewErr)}); falling back to a single comment.`);
+                    const { url } = await remote.provider.postPrComment({ owner: remote.owner, repo: remote.repo, number: prNumber, body: findingsToFallbackComment(findings) + footer });
+                    telemetryEvent('postInlineReview', { outcome: 'fallback' }, { durationMs: Date.now() - t0, comments: comments.length, dropped });
+                    const open = await vscode.window.showInformationMessage(`Posted review findings as a single comment on PR #${prNumber} (inline anchoring unavailable).`, 'Open in Browser');
+                    if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(url)); }
+                }
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                if (classifyError(err) === 'cancelled') { log('Inline review cancelled.'); return; }
+                log(`Inline review failed: ${msg}`);
+                telemetryError('postInlineReview', { outcome: 'error', errorKind: classifyError(err) });
+                vscode.window.showErrorMessage(`PR Forge: Could not post inline review — ${msg}`);
+            }
+        }
+    );
+}
+
+function getHeadSha(cwd: string): string | undefined {
+    try { return execSync('git rev-parse HEAD', { cwd, timeout: 5000 }).toString().trim(); } catch { return undefined; }
+}
+
+/** Start/stop the "re-review on push" poller. Only active while the toggle is on. */
+function updateReReviewWatcher(enabled: boolean): void {
+    if (reReviewTimer) { clearInterval(reReviewTimer); reReviewTimer = undefined; }
+    if (!enabled) { return; }
+    const wf = getWorkspaceFolderWithConfig();
+    if (!wf) { return; }
+    const cwd = wf.uri.fsPath;
+    reReviewLastSha = getHeadSha(cwd);
+    reReviewTimer = setInterval(() => { void checkForNewCommits(cwd); }, 20_000);
+}
+
+/** When new commits land on a branch with a submitted PR, offer to re-run the review. */
+async function checkForNewCommits(cwd: string): Promise<void> {
+    if (reReviewPrompting) { return; }
+    const sha = getHeadSha(cwd);
+    if (!sha || sha === reReviewLastSha) { return; }
+    reReviewLastSha = sha;
+    if (!provider.getState().submittedPrNumber) { return; }
+    reReviewPrompting = true;
+    try {
+        const branch = getCurrentBranch(cwd) ?? 'this branch';
+        const choice = await vscode.window.showInformationMessage(
+            `PR Forge: New commits detected on ${branch}. Re-run the PR review?`,
+            'Re-review', 'Dismiss'
+        );
+        if (choice === 'Re-review') { await generatePrReview(); }
+    } finally {
+        reReviewPrompting = false;
+    }
+}
+
 function getCurrentBranch(workspacePath: string): string | null {
     try {
         return execSync('git rev-parse --abbrev-ref HEAD', { cwd: workspacePath, timeout: 5000 }).toString().trim();
@@ -1078,6 +1240,7 @@ export function activate(context: vscode.ExtensionContext): void {
             if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
         },
         onPostReview: () => { void postReviewToPr(); },
+        onPostInlineReview: () => { void postInlineReview(); },
         onClearPr: clearPrOutput,
         onCancel: cancelActiveGeneration,
         onSetModel: (model: string) => {
@@ -1112,6 +1275,40 @@ export function activate(context: vscode.ExtensionContext): void {
             writeConfig(wf, cfg);
             provider.updateState({ includeRecentCommits: value });
             log(`includeRecentCommits set to ${value}`);
+            void refreshWorkspaceState();
+        },
+        onSetCommitSummaries: (value: boolean) => {
+            const wf = getWorkspaceFolderWithConfig();
+            if (!wf) { return; }
+            const cfg = readConfig(wf);
+            if (!cfg) { return; }
+            cfg.includeCommitSummaries = value;
+            writeConfig(wf, cfg);
+            provider.updateState({ includeCommitSummaries: value });
+            log(`includeCommitSummaries set to ${value}`);
+            void refreshWorkspaceState();
+        },
+        onSetFileWalkthrough: (value: boolean) => {
+            const wf = getWorkspaceFolderWithConfig();
+            if (!wf) { return; }
+            const cfg = readConfig(wf);
+            if (!cfg) { return; }
+            cfg.includeFileWalkthrough = value;
+            writeConfig(wf, cfg);
+            provider.updateState({ includeFileWalkthrough: value });
+            log(`includeFileWalkthrough set to ${value}`);
+            void refreshWorkspaceState();
+        },
+        onSetReReviewOnPush: (value: boolean) => {
+            const wf = getWorkspaceFolderWithConfig();
+            if (!wf) { return; }
+            const cfg = readConfig(wf);
+            if (!cfg) { return; }
+            cfg.reReviewOnPush = value;
+            writeConfig(wf, cfg);
+            provider.updateState({ reReviewOnPush: value });
+            log(`reReviewOnPush set to ${value}`);
+            updateReReviewWatcher(value);
             void refreshWorkspaceState();
         },
         onRegenerate: regeneratePrBodyWithInstruction,
@@ -1154,6 +1351,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitPr', submitPr));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitDraftPr', submitDraftPr));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.postReview', () => { void postReviewToPr(); }));
+    context.subscriptions.push(vscode.commands.registerCommand('prForge.postInlineReview', () => { void postInlineReview(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.setApiKey', setApiKey));
     context.subscriptions.push(outputChannel, statusBarTools, statusBarPrBody, statusBarPrReview);
 
@@ -1167,5 +1365,6 @@ export function deactivate(): void {
     for (const disposable of workspaceWatchers) {
         disposable.dispose();
     }
+    if (reReviewTimer) { clearInterval(reReviewTimer); reReviewTimer = undefined; }
     disposeTelemetry();
 }

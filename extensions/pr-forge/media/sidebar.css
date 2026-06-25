@@ -476,6 +476,24 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
+.preview-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 0.95em;
+}
+.preview-content th,
+.preview-content td {
+  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.3));
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.preview-content th {
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.1));
+  font-weight: 600;
+}
+
 /* ── PR Title Bar (preview) ──────────────────── */
 .gh-pr-title-bar {
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.2));

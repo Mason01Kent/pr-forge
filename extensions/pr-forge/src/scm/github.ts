@@ -1,5 +1,5 @@
 import * as https from 'https';
-import { ScmProvider, PrPayload, PrResult } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment } from './index';
 
 function ghRequest(
     options: https.RequestOptions,
@@ -104,6 +104,22 @@ export class GitHubScmProvider implements ScmProvider {
         const j = json as { html_url?: string; message?: string };
         if (statusCode === 201 && j.html_url) {
             return { url: j.html_url };
+        }
+        throw new Error((j.message || `GitHub API error ${statusCode}`) + ghHint(statusCode));
+    }
+
+    async createReview(payload: {
+        owner: string; repo: string; number: number; body: string; comments: ReviewComment[];
+    }): Promise<{ url: string }> {
+        const { owner, repo, number, body, comments } = payload;
+        const reqBody = JSON.stringify({ body, event: 'COMMENT', comments });
+        const { statusCode, json } = await ghRequest(
+            { path: `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/reviews`, method: 'POST', headers: { 'Content-Type': 'application/json' } },
+            this.token, reqBody
+        );
+        const j = json as { html_url?: string; pull_request_url?: string; message?: string };
+        if (statusCode === 200 && (j.html_url || j.pull_request_url)) {
+            return { url: j.html_url || j.pull_request_url || '' };
         }
         throw new Error((j.message || `GitHub API error ${statusCode}`) + ghHint(statusCode));
     }

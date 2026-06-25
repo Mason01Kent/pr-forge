@@ -203,6 +203,23 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.3));
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown-body th {
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.1));
+  font-weight: 600;
+}
+
 /* ===================== GitHub-style PR Preview ===================== */
 
 /* PR Header Banner */

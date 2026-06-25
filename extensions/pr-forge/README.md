@@ -24,8 +24,12 @@ Supports **DeepSeek**, **OpenAI**, **Anthropic**, **OpenRouter**, **Groq**, and 
 - **Large-context mode** - Claude, GPT-4o, and DeepSeek can receive the full diff directly; chunked summarization is reserved for smaller models.
 - **Submit PR / Submit as Draft** - creates or updates the pull request on GitHub without leaving VS Code.
 - **Post Review to PR** - optionally post the generated review as a single comment on the submitted PR, using your existing GitHub sign-in (no Copilot, no extra cost).
+- **Post Inline Review** - post a GitHub review with comments anchored to specific lines, plus committable one-line **suggestions** — the same shape as Copilot's review, but with your own model.
+- **File walkthrough** - optionally append an AI-summarised `## Changes` per-file table to the PR body.
+- **Re-review on push** - opt-in: when new commits land on a branch with a submitted PR, PR Forge offers to re-run the review (accept or dismiss — no silent token spend).
 - **Cancellable generation** - cancel from the sidebar activity strip or the VS Code progress notification.
 - **Include recent commits** - optional workspace setting stored in `.pr-forge.json` controls whether recent commit messages are included.
+- **Commit summaries** - optionally append an AI-summarised `## Commits` table to the PR body (one concise line per commit, like GitHub's), generated in a single batched call.
 - **Multi-provider** - API keys are stored in VS Code SecretStorage, never in project files.
 - **Project type detection** - seeds sensible defaults for .NET, Node, React, and Python projects.
 
@@ -40,7 +44,7 @@ Most tools either *review* your PR or *manage* it. PR Forge is the only one that
 | GitHub Copilot PR features | ❌ (GPT only) | ✅ | ✅ | ❌ | Subscription |
 | BYOK review extensions | ✅ | ❌ | ✅ | ❌ | Subscription |
 
-Honest scope: PR Forge posts the review as a *single* PR comment (opt-in) or keeps it as a local file — per-line inline review comments are planned for a future release.
+PR Forge posts reviews **inline** (line-anchored comments + committable suggestions) or as a single comment, your choice. Honest scope: multi-line suggestion ranges are planned; single-line suggestions ship today.
 
 ## Support matrix
 
@@ -66,7 +70,7 @@ cd extensions/pr-forge
 npm ci
 npm run compile
 npx vsce package --no-dependencies
-code --install-extension pr-forge-1.0.0.vsix
+code --install-extension pr-forge-1.2.0.vsix
 ```
 
 Or use the Extensions panel and choose `Install from VSIX...`.
@@ -93,6 +97,9 @@ Each project gets a `.pr-forge.json` in its root. The sidebar writes most fields
 | `provider` / `defaultModel` | AI provider and model, updated automatically from the sidebar controls. |
 | `runTestsOnGenerate` | Whether to run the configured test command before generation. |
 | `includeRecentCommits` | Whether to include recent commit messages in PR body and title generation. |
+| `includeCommitSummaries` | Whether to append an AI-summarised `## Commits` table (one line per commit) to the PR body. |
+| `includeFileWalkthrough` | Whether to append an AI-summarised `## Changes` per-file table to the PR body. |
+| `reReviewOnPush` | When on and a PR is submitted, offer to re-run the review after new commits land. |
 | `outputDirectory` | Where generated files are written. Default: `.pr/`. |
 | `reviewRulesFiles` | Files such as `README.md` or `AGENTS.md` injected into the prompt as project standards. |
 | `prRiskAreas` | Risk areas to highlight in the body and review. |
@@ -114,7 +121,7 @@ It will not generate on the base branch, and it prompts when config, API key, or
 
 After a PR is submitted, **Post Review to PR** posts the generated review (`.pr/PR_REVIEW.md`) as a single comment on that PR. It uses the same GitHub token as submission — no Copilot and no extra cost.
 
-**GitHub is the only supported submission target in 1.0.** Non-GitHub remotes (including GitLab) are rejected with a clear message; GitLab Merge Request submission is planned for a future release.
+**GitHub is currently the only supported submission target.** Non-GitHub remotes (including GitLab) are rejected with a clear message; GitLab Merge Request submission is planned for a future release.
 
 ## Development
 
