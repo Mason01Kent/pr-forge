@@ -48,7 +48,7 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 
 Download the release artifact from the repo root and install it with VS Code:
 
-`pr-forge-1.4.0.vsix`
+`pr-forge-1.5.0.vsix`
 
 Use the VS Code command palette and run `Extensions: Install from VSIX...`.
 
