@@ -35,6 +35,11 @@ export interface SidebarState {
     submittedPrUrl: string | null;
     submittedPrDraft: boolean;
     submittedPrTimestamp: string | null;
+    readinessState: 'ready' | 'blocked' | 'unknown' | null;
+    readinessSummary: string | null;
+    readinessBlockers: string[];
+    readinessInfo: string[];
+    readinessUpdatedAt: string | null;
     currentBranch: string | null;
     baseBranch: string | null;
 }
@@ -47,6 +52,7 @@ type WebviewToExtMsg =
     | { command: 'submitPr' }
     | { command: 'submitDraftPr' }
     | { command: 'openInbox' }
+    | { command: 'refreshReadiness' }
     | { command: 'setApiKey' }
     | { command: 'ready' }
     | { command: 'showTools' }
@@ -84,6 +90,7 @@ export interface SidebarCallbacks {
     onSubmitPr: () => Promise<void>;
     onSubmitDraftPr: () => Promise<void>;
     onOpenInbox: () => Promise<void>;
+    onRefreshReadiness: () => Promise<void>;
     onSetApiKey: () => Promise<void>;
     onShowTools: () => void;
     onShowPreview: () => void;
@@ -144,6 +151,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         submittedPrUrl: null,
         submittedPrDraft: false,
         submittedPrTimestamp: null,
+        readinessState: null,
+        readinessSummary: null,
+        readinessBlockers: [],
+        readinessInfo: [],
+        readinessUpdatedAt: null,
         currentBranch: null,
         baseBranch: null,
     };
@@ -193,6 +205,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'openInbox':
                     this._callbacks.onOpenInbox();
+                    break;
+                case 'refreshReadiness':
+                    this._callbacks.onRefreshReadiness();
                     break;
                 case 'setApiKey':
                     this._callbacks.onSetApiKey();
@@ -347,6 +362,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="card-row" id="last-run-row" style="display:none"><span class="label">Last run</span><span class="value" id="last-run-info"></span></div>
     <div class="card-row" id="generated-title-row" style="display:none"><span class="label">Title</span><span class="value gh-pr-title-bar-text" id="generated-title-text"></span></div>
     <div class="card-row" id="submitted-pr-row" style="display:none"><span class="label">Submitted</span><button class="btn-link" id="btn-submitted-pr-link"></button></div>
+    <div class="card-row" id="readiness-row" style="display:none"><span class="label">Readiness</span><span class="badge warn" id="readiness-badge">Unknown</span></div>
+    <div class="card-row" id="readiness-summary-row" style="display:none"><span class="label">Summary</span><span class="value" id="readiness-summary"></span></div>
+    <div class="card-row" id="readiness-blockers-row" style="display:none"><span class="label">Blockers</span><span class="value" id="readiness-blockers"></span></div>
+    <div class="card-row" id="readiness-info-row" style="display:none"><span class="label">Info</span><span class="value" id="readiness-info"></span></div>
+    <div class="card-row" id="readiness-updated-row" style="display:none"><span class="label">Updated</span><span class="value" id="readiness-updated"></span></div>
   </div>
 
   <div class="no-key-banner" id="no-key-banner" style="display:none">
@@ -373,6 +393,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR</span></button>
   <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
   <button class="btn btn-secondary" id="btn-open-inbox">${ic.preview}<span>Open Inbox</span></button>
+  <button class="btn btn-secondary" id="btn-refresh-readiness">${ic.review}<span>Check Readiness</span></button>
   <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR</span></button>
   <button class="btn btn-secondary" id="btn-post-review" style="display:none">${ic.review}<span>Post Review to PR</span></button>
   <button class="btn btn-secondary" id="btn-post-inline-review" style="display:none">${ic.review}<span>Post Inline Review</span></button>
@@ -438,7 +459,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-inbox','btn-open-github','btn-post-review','btn-post-inline-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-inbox','btn-refresh-readiness','btn-open-github','btn-post-review','btn-post-inline-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -448,6 +469,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-submit-pr').addEventListener('click', () => vscode.postMessage({ command: 'submitPr' }));
   el('btn-submit-draft-pr').addEventListener('click', () => vscode.postMessage({ command: 'submitDraftPr' }));
   el('btn-open-inbox').addEventListener('click', () => vscode.postMessage({ command: 'openInbox' }));
+  el('btn-refresh-readiness').addEventListener('click', () => vscode.postMessage({ command: 'refreshReadiness' }));
   el('btn-generated-open-body').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
   el('btn-generated-open-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
   el('btn-generated-preview-body').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));
@@ -623,6 +645,46 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('submitted-pr-row').style.display = 'none';
     }
 
+    const hasReadiness = state.submittedPrNumber && state.readinessState;
+    if (hasReadiness) {
+      const badge = el('readiness-badge');
+      const readinessState = state.readinessState || 'unknown';
+      const readinessLabel = readinessState === 'ready' ? 'Ready' : readinessState === 'blocked' ? 'Blocked' : 'Unknown';
+      badge.textContent = readinessLabel;
+      badge.className = readinessState === 'ready' ? 'badge ok' : readinessState === 'blocked' ? 'badge warn' : 'badge warn';
+      el('readiness-row').style.display = '';
+      if (state.readinessSummary) {
+        el('readiness-summary').textContent = state.readinessSummary;
+        el('readiness-summary-row').style.display = '';
+      } else {
+        el('readiness-summary-row').style.display = 'none';
+      }
+      if (state.readinessBlockers && state.readinessBlockers.length > 0) {
+        el('readiness-blockers').textContent = state.readinessBlockers.join(' · ');
+        el('readiness-blockers-row').style.display = '';
+      } else {
+        el('readiness-blockers-row').style.display = 'none';
+      }
+      if (state.readinessInfo && state.readinessInfo.length > 0) {
+        el('readiness-info').textContent = state.readinessInfo.join(' · ');
+        el('readiness-info-row').style.display = '';
+      } else {
+        el('readiness-info-row').style.display = 'none';
+      }
+      if (state.readinessUpdatedAt) {
+        el('readiness-updated').textContent = state.readinessUpdatedAt;
+        el('readiness-updated-row').style.display = '';
+      } else {
+        el('readiness-updated-row').style.display = 'none';
+      }
+    } else {
+      el('readiness-row').style.display = 'none';
+      el('readiness-summary-row').style.display = 'none';
+      el('readiness-blockers-row').style.display = 'none';
+      el('readiness-info-row').style.display = 'none';
+      el('readiness-updated-row').style.display = 'none';
+    }
+
     _onBaseBranch = state.currentBranch !== null && state.currentBranch === state.baseBranch;
     if (state.currentBranch) {
       const branchEl = el('branch-name');
@@ -656,6 +718,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-post-review').title = 'Post the generated review as a comment on the submitted PR';
     el('btn-post-inline-review').style.display = state.submittedPrUrl ? '' : 'none';
     el('btn-post-inline-review').title = 'Generate and post line-anchored inline review comments on the submitted PR';
+    el('btn-refresh-readiness').disabled = !!state.isRunning || !state.submittedPrNumber;
+    el('btn-refresh-readiness').title = state.submittedPrNumber ? 'Refresh merge readiness from the remote host' : 'Submit a PR or MR first';
 
     const hasGeneratedContent = state.bodyExists || state.reviewExists;
     const generatedCard = el('generated-content-card');

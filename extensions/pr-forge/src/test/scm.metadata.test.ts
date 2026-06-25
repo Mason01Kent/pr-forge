@@ -70,6 +70,46 @@ describe('SCM metadata automation', () => {
         }
     });
 
+    it('summarizes GitHub merge readiness from statuses, checks, and reviews', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /repos/o/r/pulls/4':
+                    return {
+                        statusCode: 200,
+                        body: {
+                            draft: false,
+                            mergeable: true,
+                            mergeable_state: 'clean',
+                            head: { sha: 'abc123', ref: 'feat' },
+                            requested_reviewers: [{ login: 'alice' }],
+                        },
+                    };
+                case 'GET /repos/o/r/commits/abc123/status':
+                    return { statusCode: 200, body: { state: 'success', statuses: [{ context: 'ci', state: 'success' }] } };
+                case 'GET /repos/o/r/commits/abc123/check-runs?filter=latest&per_page=100':
+                    return { statusCode: 200, body: { check_runs: [{ name: 'build', conclusion: 'success', status: 'completed' }] } };
+                case 'GET /repos/o/r/pulls/4/reviews?per_page=100':
+                    return {
+                        statusCode: 200,
+                        body: [
+                            { state: 'APPROVED', submitted_at: '2026-06-25T12:00:00Z', user: { login: 'alice' } },
+                        ],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const readiness = await provider.getReadiness({ owner: 'o', repo: 'r', number: 4 });
+            assert.strictEqual(readiness.state, 'ready');
+            assert.ok(readiness.info.some(line => line.includes('passing') || line.includes('Approvals')));
+            assert.strictEqual(readiness.blockers.length, 0);
+        } finally {
+            server.close();
+        }
+    });
+
     it('attaches GitHub labels, assignees, reviewers, and milestone metadata', async () => {
         const server = await mockServer((req) => {
             switch (`${req.method} ${req.path}`) {
@@ -189,6 +229,45 @@ describe('SCM metadata automation', () => {
                 updatedAt: '2026-06-25T11:00:00Z',
                 labels: ['backend', 'priority'],
             }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('summarizes GitLab merge readiness with blockers', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /projects/o%2Fr/merge_requests/9':
+                    return {
+                        statusCode: 200,
+                        body: {
+                            draft: false,
+                            work_in_progress: false,
+                            has_conflicts: false,
+                            blocking_discussions_resolved: true,
+                            detailed_merge_status: 'checking',
+                            head_pipeline: { status: 'pending' },
+                        },
+                    };
+                case 'GET /projects/o%2Fr/merge_requests/9/approvals':
+                    return {
+                        statusCode: 200,
+                        body: {
+                            approvals_left: 1,
+                            approvals_required: 2,
+                            approved_by: [{ user: { username: 'alice' } }],
+                        },
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const readiness = await provider.getReadiness({ owner: 'o', repo: 'r', number: 9 });
+            assert.strictEqual(readiness.state, 'blocked');
+            assert.ok(readiness.blockers.some(line => line.includes('approval') || line.includes('pipeline')));
+            assert.ok(readiness.info.some(line => line.includes('Approvals required') || line.includes('Approved by')));
         } finally {
             server.close();
         }

@@ -269,6 +269,9 @@ async function refreshWorkspaceState(): Promise<void> {
             previewBody: null,
         });
     }
+    if (provider.getState().submittedPrNumber) {
+        void refreshReadiness(true);
+    }
 }
 
 async function withStatusBarSpinner(
@@ -373,6 +376,11 @@ async function clearPrOutput(): Promise<void> {
         submittedPrNumber: null,
         submittedPrUrl: null,
         submittedPrTimestamp: null,
+        readinessState: null,
+        readinessSummary: null,
+        readinessBlockers: [],
+        readinessInfo: [],
+        readinessUpdatedAt: null,
         viewMode: 'tools',
         titleExists: false,
         bodyExists: false,
@@ -802,6 +810,94 @@ async function openInbox(): Promise<void> {
     );
 }
 
+async function refreshReadiness(silent = false): Promise<void> {
+    const workspaceFolder = await resolveTargetProjectFolder();
+    if (!workspaceFolder) {
+        if (!silent) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); }
+        return;
+    }
+    if (!(await ensureConfig(workspaceFolder))) return;
+
+    const prNumber = provider.getState().submittedPrNumber;
+    if (!prNumber) {
+        if (!silent) {
+            vscode.window.showInformationMessage('PR Forge: Submit a PR or merge request first, then refresh readiness.');
+        }
+        provider.updateState({
+            readinessState: null,
+            readinessSummary: null,
+            readinessBlockers: [],
+            readinessInfo: [],
+            readinessUpdatedAt: null,
+        });
+        return;
+    }
+
+    let remoteUrl: string;
+    try {
+        remoteUrl = execSync('git remote get-url origin', { cwd: workspaceFolder.uri.fsPath }).toString().trim();
+    } catch {
+        if (!silent) { vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?'); }
+        return;
+    }
+
+    const isGitLabRemote = /gitlab\.com/i.test(remoteUrl);
+    let token: string | undefined;
+    if (isGitLabRemote) {
+        token = (await getApiKey(extensionContext, 'gitlab')) ?? undefined;
+        if (!token) {
+            if (!silent) {
+                vscode.window.showErrorMessage('PR Forge: No GitLab token. Use "Set API Key" → "GitLab (SCM token)" to store your personal access token (api scope required).');
+            }
+            return;
+        }
+    } else {
+        try {
+            const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+            token = session.accessToken;
+        } catch {
+            token = process.env.GITHUB_TOKEN;
+        }
+        if (!token) {
+            if (!silent) {
+                vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
+            }
+            return;
+        }
+    }
+
+    const remote = parseRemote(remoteUrl, token);
+    if (!remote) {
+        if (!silent) {
+            vscode.window.showErrorMessage(`PR Forge: Unsupported remote host. Only GitHub and GitLab are supported. Remote: ${remoteUrl}`);
+        }
+        return;
+    }
+
+    try {
+        const readiness = await remote.provider.getReadiness({ owner: remote.owner, repo: remote.repo, number: prNumber });
+        provider.updateState({
+            readinessState: readiness.state,
+            readinessSummary: readiness.summary,
+            readinessBlockers: readiness.blockers,
+            readinessInfo: readiness.info,
+            readinessUpdatedAt: readiness.updatedAt ?? new Date().toLocaleString(),
+        });
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        provider.updateState({
+            readinessState: 'unknown',
+            readinessSummary: msg,
+            readinessBlockers: [],
+            readinessInfo: [],
+            readinessUpdatedAt: new Date().toLocaleString(),
+        });
+        if (!silent) {
+            vscode.window.showErrorMessage(`PR Forge: Could not refresh readiness â€” ${msg}`);
+        }
+    }
+}
+
 async function submitPr(): Promise<void> {
     await submitPrInternal(false);
 }
@@ -1005,6 +1101,7 @@ async function submitPrInternal(draft: boolean): Promise<void> {
             submittedPrDraft: draft,
             submittedPrTimestamp: new Date().toLocaleTimeString(),
         });
+        void refreshReadiness(true);
         const actionLabel = existingPr ? `PR #${prNumber} updated!` : `${draft ? 'Draft PR' : 'PR'} #${prNumber} created!`;
         const open = await vscode.window.showInformationMessage(actionLabel, 'Open in Browser');
         if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(prUrl)); }
@@ -1328,6 +1425,7 @@ export function activate(context: vscode.ExtensionContext): void {
         onSubmitPr: submitPr,
         onSubmitDraftPr: submitDraftPr,
         onOpenInbox: openInbox,
+        onRefreshReadiness: () => refreshReadiness(),
         onSetApiKey: setApiKey,
         onShowTools: () => {
             provider.updateState({ viewMode: 'tools' });

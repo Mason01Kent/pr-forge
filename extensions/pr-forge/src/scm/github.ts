@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as https from 'https';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, ReadinessSummary } from './index';
 
 function ghRequest(
     baseUrl: string,
@@ -63,6 +63,17 @@ function ghHint(statusCode: number): string {
 }
 
 function enc(s: string): string { return encodeURIComponent(s); }
+
+function isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function pushUnique(list: string[], value: string): void {
+    const normalized = value.trim();
+    if (normalized && !list.includes(normalized)) {
+        list.push(normalized);
+    }
+}
 
 async function findMilestoneNumber(baseUrl: string, token: string, owner: string, repo: string, milestone: string): Promise<number | null> {
     const { statusCode, json } = await ghRequest(
@@ -185,6 +196,158 @@ export class GitHubScmProvider implements ScmProvider {
                 labels: item.labels?.map(label => label.name).filter((name): name is string => !!name) ?? [],
             }];
         });
+    }
+
+    async getReadiness(payload: { owner: string; repo: string; number: number }): Promise<ReadinessSummary> {
+        const { owner, repo, number } = payload;
+        const blockers: string[] = [];
+        const info: string[] = [];
+        const updatedAt = new Date().toLocaleString();
+
+        const prResp = await ghRequest(
+            this.baseUrl,
+            { path: `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}`, method: 'GET' },
+            this.token
+        );
+        if (prResp.statusCode !== 200 || typeof prResp.json !== 'object' || prResp.json === null) {
+            throw new Error(`GitHub API error ${prResp.statusCode}${ghHint(prResp.statusCode)}`);
+        }
+
+        const pr = prResp.json as {
+            draft?: boolean;
+            mergeable?: boolean | null;
+            mergeable_state?: string;
+            head?: { sha?: string; ref?: string };
+            base?: { ref?: string };
+            requested_reviewers?: Array<{ login?: string }>;
+        };
+        const headSha = pr.head?.sha;
+
+        if (pr.draft) {
+            blockers.push('PR is marked draft');
+        }
+
+        switch ((pr.mergeable_state ?? '').toLowerCase()) {
+            case 'clean':
+                pushUnique(info, 'GitHub reports a clean merge state');
+                break;
+            case 'behind':
+                pushUnique(info, 'Head branch is behind the base branch');
+                break;
+            case 'blocked':
+                blockers.push('GitHub merge is blocked by branch protection');
+                break;
+            case 'dirty':
+                blockers.push('GitHub reports merge conflicts');
+                break;
+            case 'draft':
+                blockers.push('PR is still in draft state');
+                break;
+            case 'unstable':
+                blockers.push('Required status checks are not passing');
+                break;
+            case 'unknown':
+            case '':
+                pushUnique(info, 'GitHub mergeability is still being calculated');
+                break;
+            default:
+                pushUnique(info, `Merge state: ${pr.mergeable_state}`);
+                break;
+        }
+
+        if (pr.mergeable === false) {
+            blockers.push('GitHub reports merge conflicts');
+        } else if (pr.mergeable === null) {
+            pushUnique(info, 'GitHub is still calculating mergeability');
+        }
+
+        const reviewers = pr.requested_reviewers?.map(r => r.login).filter(isNonEmptyString) ?? [];
+        if (reviewers.length > 0) {
+            pushUnique(info, `Requested reviewers: ${reviewers.slice(0, 3).join(', ')}`);
+        }
+
+        if (headSha) {
+            const statusResp = await ghRequest(
+                this.baseUrl,
+                { path: `/repos/${enc(owner)}/${enc(repo)}/commits/${enc(headSha)}/status`, method: 'GET' },
+                this.token
+            );
+            if (statusResp.statusCode === 200 && typeof statusResp.json === 'object' && statusResp.json !== null) {
+                const status = statusResp.json as { state?: string; statuses?: Array<{ context?: string; state?: string }> };
+                const state = (status.state ?? '').toLowerCase();
+                if (state === 'success') {
+                    pushUnique(info, 'Commit statuses: passing');
+                } else if (state === 'pending') {
+                    blockers.push('Commit statuses are pending');
+                } else if (state === 'failure' || state === 'error') {
+                    blockers.push('Commit statuses are failing');
+                } else if (state) {
+                    pushUnique(info, `Commit status: ${state}`);
+                }
+                const contexts = status.statuses?.map(s => `${s.context ?? 'status'}:${s.state ?? 'unknown'}`) ?? [];
+                if (contexts.length > 0) {
+                    pushUnique(info, `Status contexts: ${contexts.slice(0, 3).join(', ')}`);
+                }
+            }
+
+            const checksResp = await ghRequest(
+                this.baseUrl,
+                { path: `/repos/${enc(owner)}/${enc(repo)}/commits/${enc(headSha)}/check-runs?filter=latest&per_page=100`, method: 'GET' },
+                this.token
+            );
+            if (checksResp.statusCode === 200 && typeof checksResp.json === 'object' && checksResp.json !== null) {
+                const checks = checksResp.json as { check_runs?: Array<{ name?: string; conclusion?: string; status?: string }> };
+                const runs = Array.isArray(checks.check_runs) ? checks.check_runs : [];
+                if (runs.length > 0) {
+                    const failing = runs.filter(run => ['failure', 'cancelled', 'timed_out', 'action_required'].includes((run.conclusion ?? '').toLowerCase()));
+                    const pending = runs.filter(run => ['queued', 'in_progress', 'requested'].includes((run.status ?? '').toLowerCase()));
+                    const passing = runs.filter(run => (run.conclusion ?? '').toLowerCase() === 'success');
+                    if (failing.length > 0) {
+                        blockers.push(`Check runs failing: ${failing.slice(0, 3).map(run => run.name ?? 'check').join(', ')}`);
+                    }
+                    if (pending.length > 0) {
+                        blockers.push(`Check runs pending: ${pending.slice(0, 3).map(run => run.name ?? 'check').join(', ')}`);
+                    }
+                    if (passing.length > 0 && failing.length === 0 && pending.length === 0) {
+                        pushUnique(info, `Check runs passing: ${passing.length}/${runs.length}`);
+                    }
+                }
+            }
+        }
+
+        const reviewsResp = await ghRequest(
+            this.baseUrl,
+            { path: `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/reviews?per_page=100`, method: 'GET' },
+            this.token
+        );
+        if (Array.isArray(reviewsResp.json)) {
+            const latestByUser = new Map<string, { state: string; submitted_at: string }>();
+            for (const review of reviewsResp.json as Array<{ state?: string; submitted_at?: string; user?: { login?: string } }>) {
+                const login = review.user?.login;
+                const submittedAt = review.submitted_at ?? '';
+                if (!login || !submittedAt) {
+                    continue;
+                }
+                const current = latestByUser.get(login);
+                if (!current || submittedAt > current.submitted_at) {
+                    latestByUser.set(login, { state: (review.state ?? '').toUpperCase(), submitted_at: submittedAt });
+                }
+            }
+            const approvals = Array.from(latestByUser.values()).filter(review => review.state === 'APPROVED').length;
+            const changesRequested = Array.from(latestByUser.values()).filter(review => review.state === 'CHANGES_REQUESTED').length;
+            if (changesRequested > 0) {
+                blockers.push(`Changes requested by ${changesRequested} reviewer(s)`);
+            }
+            if (approvals > 0) {
+                pushUnique(info, `Approvals: ${approvals}`);
+            } else {
+                pushUnique(info, 'No approving review recorded yet');
+            }
+        }
+
+        const state = blockers.length > 0 ? 'blocked' : (info.length > 0 ? 'ready' : 'unknown');
+        const summary = blockers[0] ?? info[0] ?? 'No readiness data available';
+        return { state, summary, blockers, info, updatedAt };
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {
