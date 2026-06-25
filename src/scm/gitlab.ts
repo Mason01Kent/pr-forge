@@ -118,7 +118,15 @@ export class GitLabScmProvider implements ScmProvider {
         throw new Error((j.message ?? `GitLab API error ${statusCode}`) + glHint(statusCode));
     }
 
-    async createReview(_payload: { owner: string; repo: string; number: number; body: string; comments: ReviewComment[] }): Promise<{ url: string }> {
-        throw new Error('GitLab inline review not yet implemented (Slice 4).');
+    async createReview(payload: { owner: string; repo: string; number: number; body: string; comments: ReviewComment[] }): Promise<{ url: string }> {
+        const { owner, repo, number, body, comments } = payload;
+        // Post the review summary body as a plain MR note
+        const summaryResult = await this.postPrComment({ owner, repo, number, body });
+        // Post each inline comment as a separate note (no diff-position anchoring — interface lacks SHAs)
+        for (const c of comments) {
+            const noteBody = `\`${c.path}:${c.line}\` — ${c.body}`;
+            await this.postPrComment({ owner, repo, number, body: noteBody }).catch(() => { /* best-effort */ });
+        }
+        return summaryResult;
     }
 }
