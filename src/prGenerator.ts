@@ -161,7 +161,7 @@ async function buildFileWalkthroughTable(opts: PrGeneratorOptions, cwd: string):
   }).join('\n\n');
 
   opts.onLog(`Summarising ${fileDiffs.length} changed file(s)...`);
-  let summaries: Record<string, string> = {};
+  const summaries: Record<string, string> = {};
   try {
     const response = await chatComplete(opts.llm, [
       { role: 'system', content: `You summarise file changes for the ${opts.projectName} project. Output strict JSON only — no prose, no code fences.` },
@@ -381,8 +381,8 @@ ${context}`,
 }
 
 /** Strip common branch-name prefixes and separators to produce a readable PR title. */
-function titleFromBranch(branch: string): string {
-  let t = branch
+export function titleFromBranch(branch: string): string {
+  const t = branch
     .replace(/^(feat|fix|chore|hotfix|release|refactor|docs|test|style|build|ci|perf|revert)[/\-]/i, '')
     .replace(/[-_/]/g, ' ')
     .trim();

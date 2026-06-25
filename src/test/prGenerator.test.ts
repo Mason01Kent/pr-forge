@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { batchFileDiffs } from '../prGenerator';
+import { batchFileDiffs, titleFromBranch } from '../prGenerator';
 
 describe('batchFileDiffs', () => {
   const CHUNK = 100;
@@ -43,5 +43,20 @@ describe('batchFileDiffs', () => {
     const files = [{ file: 'exact.ts', diff: 'z'.repeat(CHUNK) }];
     const batches = batchFileDiffs(files, CHUNK);
     assert.strictEqual(batches.length, 1);
+  });
+});
+
+describe('titleFromBranch', () => {
+  it('strips feat/ prefix and capitalises', () => {
+    assert.strictEqual(titleFromBranch('feat/add-gitlab-support'), 'Add gitlab support');
+  });
+  it('strips fix- prefix', () => {
+    assert.strictEqual(titleFromBranch('fix-broken-auth'), 'Broken auth');
+  });
+  it('converts separators to spaces without a known prefix', () => {
+    assert.strictEqual(titleFromBranch('my_feature-branch/thing'), 'My feature branch thing');
+  });
+  it('handles plain branch names', () => {
+    assert.strictEqual(titleFromBranch('main'), 'Main');
   });
 });
