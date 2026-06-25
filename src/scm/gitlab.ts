@@ -376,7 +376,18 @@ export class GitLabScmProvider implements ScmProvider {
                 state,
                 actionable,
                 comments: notes
-                    .filter((note): note is NonNullable<typeof note> => !!note && typeof note.body === 'string')
+                    .filter((note): note is {
+                        body: string;
+                        author?: { username?: string; name?: string };
+                        web_url?: string;
+                        created_at?: string;
+                        position?: {
+                            new_path?: string;
+                            old_path?: string;
+                            new_line?: number;
+                            old_line?: number;
+                        };
+                    } => !!note && typeof note.body === 'string')
                     .map(note => ({
                         author: note.author?.username ?? note.author?.name ?? undefined,
                         body: summarizeThreadBody(note.body),

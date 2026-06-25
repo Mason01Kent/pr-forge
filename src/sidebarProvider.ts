@@ -229,6 +229,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'openReviewPanel':
                     this._callbacks.onOpenReviewPanel();
                     break;
+                case 'openReviewThreads':
+                    this._callbacks.onOpenReviewThreads();
+                    break;
                 case 'copyPreviewTitle':
                     if (this._state.previewTitle) {
                         this._callbacks.onCopyPreviewTitle(this._state.previewTitle);

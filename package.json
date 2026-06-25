@@ -87,6 +87,10 @@
         "title": "PR Forge: Post Review as PR Comment"
       },
       {
+        "command": "prForge.openReviewThreads",
+        "title": "PR Forge: Browse Review Threads"
+      },
+      {
         "command": "prForge.postInlineReview",
         "title": "PR Forge: Post Inline Review to PR"
       },

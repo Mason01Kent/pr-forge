@@ -479,7 +479,15 @@ query($owner: String!, $repo: String!, $number: Int!) {
         }
         const threads = data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
         return threads.flatMap((thread, index) => {
-            const comments = thread.comments?.nodes?.filter((comment): comment is NonNullable<typeof comment> => !!comment && typeof comment.body === 'string') ?? [];
+            const comments = (thread.comments?.nodes ?? []).filter((comment): comment is {
+                body: string;
+                url?: string;
+                createdAt?: string;
+                author?: { login?: string };
+                path?: string;
+                line?: number;
+                originalLine?: number;
+            } => !!comment && typeof comment.body === 'string');
             if (comments.length === 0) {
                 return [];
             }
