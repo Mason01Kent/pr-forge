@@ -7,7 +7,7 @@ import { ScmProvider, PrPayload, PrResult, ReviewComment } from './index';
  */
 export class GitLabScmProvider implements ScmProvider {
     readonly name = 'GitLab';
-    constructor(private readonly _token: string) {}
+    constructor(private readonly token: string) {}
 
     async createPr(_payload: PrPayload): Promise<PrResult> {
         throw new Error('GitLab MR submission is not yet implemented in PR Forge.');
