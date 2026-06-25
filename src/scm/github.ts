@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as https from 'https';
-import { ScmProvider, PrPayload, PrResult, ReviewComment } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem } from './index';
 
 function ghRequest(
     baseUrl: string,
@@ -149,6 +149,42 @@ export class GitHubScmProvider implements ScmProvider {
         if (!Array.isArray(arr) || arr.length === 0) { return null; }
         const pr = arr[0];
         return (pr.html_url && pr.number) ? { url: pr.html_url, number: pr.number } : null;
+    }
+
+    async listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]> {
+        const { owner, repo } = payload;
+        const { json } = await ghRequest(
+            this.baseUrl,
+            { path: `/repos/${enc(owner)}/${enc(repo)}/pulls?state=open&per_page=100&sort=updated&direction=desc`, method: 'GET' },
+            this.token
+        );
+        if (!Array.isArray(json)) {
+            return [];
+        }
+        return json.flatMap((item: {
+            number?: number;
+            title?: string;
+            html_url?: string;
+            state?: string;
+            draft?: boolean;
+            updated_at?: string;
+            user?: { login?: string };
+            labels?: Array<{ name?: string }>;
+        }) => {
+            if (!item.number || !item.title || !item.html_url) {
+                return [];
+            }
+            return [{
+                number: item.number,
+                title: item.title,
+                url: item.html_url,
+                state: item.state,
+                draft: item.draft,
+                author: item.user?.login,
+                updatedAt: item.updated_at,
+                labels: item.labels?.map(label => label.name).filter((name): name is string => !!name) ?? [],
+            }];
+        });
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {
