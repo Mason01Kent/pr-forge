@@ -16,6 +16,12 @@ export interface FileDiff {
     diff: string;
 }
 
+/** Right-side diff location plus the matching old-side line when available. */
+export interface DiffAnchor {
+    rightLine: number;
+    oldLine?: number;
+}
+
 /** How far to snap a finding's line to the nearest valid diff line before dropping it. */
 const SNAP_WINDOW = 3;
 
@@ -57,6 +63,46 @@ export function parseRightSideLines(fileDiff: string): Set<number> {
         }
     }
     return valid;
+}
+
+/**
+ * Parse right-side diff line positions and keep the matching old-side line when
+ * the unified diff exposes it.
+ */
+export function parseDiffAnchors(fileDiff: string): Map<number, DiffAnchor> {
+    const anchors = new Map<number, DiffAnchor>();
+    let rightLine = 0;
+    let oldLine = 0;
+    let inHunk = false;
+
+    for (const line of fileDiff.split('\n')) {
+        const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (hunk) {
+            oldLine = parseInt(hunk[1], 10);
+            rightLine = parseInt(hunk[2], 10);
+            inHunk = true;
+            continue;
+        }
+        if (!inHunk) { continue; }
+        if (line.startsWith('diff ') || line.startsWith('index ') ||
+            line.startsWith('--- ') || line.startsWith('+++ ')) {
+            continue;
+        }
+        const marker = line[0];
+        if (marker === '+') {
+            anchors.set(rightLine, { rightLine });
+            rightLine++;
+        } else if (marker === ' ') {
+            anchors.set(rightLine, { rightLine, oldLine });
+            rightLine++;
+            oldLine++;
+        } else if (marker === '-') {
+            oldLine++;
+        } else if (marker === '\\' || line === '') {
+            // ignore
+        }
+    }
+    return anchors;
 }
 
 /**
@@ -111,6 +157,7 @@ export function mapFindingsToComments(
 ): { comments: ReviewComment[]; dropped: number } {
     const diffByFile = new Map(fileDiffs.map(f => [f.file, f.diff]));
     const validByFile = new Map<string, Set<number>>();
+    const anchorByFile = new Map<string, Map<number, DiffAnchor>>();
     const comments: ReviewComment[] = [];
     let dropped = 0;
 
@@ -120,9 +167,12 @@ export function mapFindingsToComments(
         if (!diff) { dropped++; continue; }
         let valid = validByFile.get(f.file);
         if (!valid) { valid = parseRightSideLines(diff); validByFile.set(f.file, valid); }
+        let anchors = anchorByFile.get(f.file);
+        if (!anchors) { anchors = parseDiffAnchors(diff); anchorByFile.set(f.file, anchors); }
         const line = snapToValid(Math.round(f.line), valid);
         if (line === null) { dropped++; continue; }
-        comments.push({ path: f.file, line, side: 'RIGHT', body: buildCommentBody(f) });
+        const anchor = anchors.get(line);
+        comments.push({ path: f.file, line, oldLine: anchor?.oldLine, side: 'RIGHT', body: buildCommentBody(f) });
     }
     return { comments, dropped };
 }

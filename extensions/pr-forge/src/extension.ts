@@ -12,6 +12,7 @@ import { PROVIDERS, DEFAULT_MODELS, UsageStats } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
 import { parseRemote } from './scm/index';
 import { initTelemetry, disposeTelemetry, telemetryEvent, telemetryError, classifyError } from './telemetry';
+import { discoverRepositoryTemplateFiles } from './templateDiscovery';
 
 const OUTPUT_CHANNEL_NAME = 'PR Forge';
 const CONFIG_FILE_NAME = '.pr-forge.json';
@@ -424,17 +425,20 @@ async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder):
     for (const file of ['AGENTS.md', 'README.md', 'docs/agent-guides/current-state.md', 'docs/KNOWN_ISSUES.md']) {
         if (fs.existsSync(path.join(rootPath, file))) reviewRulesFiles.push(file);
     }
+    const templateFiles = discoverRepositoryTemplateFiles(rootPath);
     const isSellWise = projectName.toLowerCase().includes('sellwise') || workspaceFolder.name.toLowerCase().includes('sellwise');
     const prRiskAreas = isSellWise
         ? ['authentication', 'authorization', 'ownership isolation', 'PostgreSQL migrations', 'decimal money handling', 'inventory transactions', 'refunds', 'production readiness', 'config/secrets safety']
         : ['security', 'tests', 'configuration', 'data integrity', 'deployment risk'];
     const config: PrForgeConfig = {
-        schemaVersion: 5, projectName, baseBranch: 'main', projectType,
+        schemaVersion: 8, projectName, baseBranch: 'main', projectType,
         testCommand: testCommands[projectType] || '', runTestsOnGenerate: true, includeRecentCommits: false,
         includeCommitSummaries: false, includeFileWalkthrough: false, reReviewOnPush: false,
         outputDirectory: '.pr',
         provider: 'deepseek', defaultModel: 'deepseek-chat',
-        reviewRulesFiles, prRiskAreas,
+        reviewRulesFiles, templateFiles,
+        prLabels: [], prReviewers: [], prAssignees: [], prMilestone: '',
+        prRiskAreas,
         prBodySections: ['Summary', 'Why this matters', 'Changes', 'Tests / verification', 'Review focus', 'Risks / follow-ups']
     };
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
@@ -503,6 +507,7 @@ async function generatePrBody(): Promise<void> {
                         prRiskAreas: config.prRiskAreas,
                         prBodySections: config.prBodySections,
                         reviewRulesFiles: config.reviewRulesFiles,
+                        templateFiles: config.templateFiles ?? [],
                         testCommand: config.testCommand,
                         runTests: config.runTestsOnGenerate ?? true,
                         generateReview: false,
@@ -593,6 +598,7 @@ async function generatePrReview(): Promise<void> {
                         prRiskAreas: config.prRiskAreas,
                         prBodySections: config.prBodySections,
                         reviewRulesFiles: config.reviewRulesFiles,
+                        templateFiles: config.templateFiles ?? [],
                         testCommand: config.testCommand,
                         runTests: config.runTestsOnGenerate ?? true,
                         generateReview: true,
@@ -674,6 +680,7 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
                         prRiskAreas: config.prRiskAreas,
                         prBodySections: config.prBodySections,
                         reviewRulesFiles: config.reviewRulesFiles,
+                        templateFiles: config.templateFiles ?? [],
                         testCommand: config.testCommand,
                         runTests: false,
                         generateReview: false,
@@ -854,7 +861,20 @@ async function submitPrInternal(draft: boolean): Promise<void> {
             { location: vscode.ProgressLocation.Notification, title: `PR Forge: Updating PR #${existingPr.number}...`, cancellable: false },
             async () => {
                 try {
-                    const result = await scm.updatePr({ owner, repo, number: existingPr!.number, title, body, head: headBranch, base: config.baseBranch, token: token! });
+                    const result = await scm.updatePr({
+                        owner,
+                        repo,
+                        number: existingPr!.number,
+                        title,
+                        body,
+                        head: headBranch,
+                        base: config.baseBranch,
+                        token: token!,
+                        labels: config.prLabels ?? [],
+                        reviewers: config.prReviewers ?? [],
+                        assignees: config.prAssignees ?? [],
+                        milestone: config.prMilestone ?? '',
+                    });
                     prUrl = result.url;
                     prNumber = result.number;
                     log(`PR #${prNumber} updated: ${prUrl}`);
@@ -884,7 +904,20 @@ async function submitPrInternal(draft: boolean): Promise<void> {
             { location: vscode.ProgressLocation.Notification, title: progressTitle, cancellable: false },
             async () => {
                 try {
-                    const result = await scm.createPr({ owner, repo, title, body, head: headBranch, base: config.baseBranch, token: token!, draft });
+                    const result = await scm.createPr({
+                        owner,
+                        repo,
+                        title,
+                        body,
+                        head: headBranch,
+                        base: config.baseBranch,
+                        token: token!,
+                        draft,
+                        labels: config.prLabels ?? [],
+                        reviewers: config.prReviewers ?? [],
+                        assignees: config.prAssignees ?? [],
+                        milestone: config.prMilestone ?? '',
+                    });
                     prUrl = result.url;
                     prNumber = result.number;
                     log(`${prType} created: ${result.url}`);
