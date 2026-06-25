@@ -18,7 +18,7 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 - **Generate PR Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation
 - **Post Inline Review** — post a proper GitHub review with comments anchored to specific diff lines, plus committable one-line suggestions (same shape as Copilot's review, with your own model)
 - **Post Review as PR Comment** — alternative: post the full review as a single comment on the submitted PR
-- **Submit PR / Submit Draft PR** — create or update a GitHub pull request without leaving VS Code
+- **Submit PR / Submit Draft PR** — create or update a pull request or merge request without leaving VS Code
 - **Regenerate with feedback** — type an instruction in the Refine panel and hit Enter to revise the draft without re-running tests
 - **File walkthrough** — opt-in `## Changes` per-file table appended to the PR body
 - **Commit summaries** — opt-in `## Commits` table with one AI-written line per commit
