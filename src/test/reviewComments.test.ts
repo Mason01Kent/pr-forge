@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import {
   parseRightSideLines,
+  parseDiffAnchors,
   mapFindingsToComments,
   buildCommentBody,
   parseFindingsJson,
@@ -33,16 +34,24 @@ describe('parseRightSideLines', () => {
   });
 });
 
+describe('parseDiffAnchors', () => {
+  it('keeps old-side line numbers for unchanged lines', () => {
+    const anchors = parseDiffAnchors(SAMPLE_DIFF);
+    assert.deepStrictEqual(anchors.get(1), { rightLine: 1, oldLine: 1 });
+    assert.deepStrictEqual(anchors.get(4), { rightLine: 4, oldLine: 3 });
+  });
+});
+
 describe('mapFindingsToComments', () => {
   const fileDiffs = [{ file: 'src/foo.ts', diff: SAMPLE_DIFF }];
 
   it('keeps a finding on a valid line', () => {
-    const { comments, dropped } = mapFindingsToComments([{ file: 'src/foo.ts', line: 3, comment: 'bug' }], fileDiffs);
+    const { comments, dropped } = mapFindingsToComments([{ file: 'src/foo.ts', line: 4, comment: 'bug' }], fileDiffs);
     assert.strictEqual(dropped, 0);
     assert.strictEqual(comments.length, 1);
     assert.deepStrictEqual(
-      { path: comments[0].path, line: comments[0].line, side: comments[0].side },
-      { path: 'src/foo.ts', line: 3, side: 'RIGHT' },
+      { path: comments[0].path, line: comments[0].line, oldLine: comments[0].oldLine, side: comments[0].side },
+      { path: 'src/foo.ts', line: 4, oldLine: 3, side: 'RIGHT' },
     );
   });
 
