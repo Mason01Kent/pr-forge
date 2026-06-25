@@ -18,12 +18,12 @@ Started: 2026-06-25
 
 ## Baseline
 
-- Version: 1.4.0
+- Version: 1.5.0
 - Branch: `phase-14/inbox`
 - Lint: clean
 - Compile: clean
 - Tests: 89 passing
-- VSIX: `pr-forge-1.4.0.vsix` built
+- VSIX: `pr-forge-1.5.0.vsix` built
 - Working tree: clean on `phase-14/inbox`
 
 ## Next recommended work
