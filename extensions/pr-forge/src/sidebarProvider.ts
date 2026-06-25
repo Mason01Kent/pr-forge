@@ -411,8 +411,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
   <div class="preview-content" id="preview-content"></div>
   <div class="regen-bar" id="regen-bar" style="display:none">
-    <input class="regen-input" id="regen-input" type="text" placeholder="Instruction - e.g. make the summary shorter...">
-    <button class="btn-regen" id="btn-regen">${ic.sync}<span>Regenerate</span></button>
+    <div class="regen-label">${ic.review}<span>Refine this draft — tell the AI what to change</span></div>
+    <div class="regen-input-row">
+      <input class="regen-input" id="regen-input" type="text" placeholder="e.g. make the summary shorter, add a Testing section…">
+      <button class="btn-regen" id="btn-regen">${ic.sync}<span>Refine</span></button>
+    </div>
   </div>
 </div>
 

@@ -3,6 +3,11 @@
 All notable changes to PR Forge are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.2.1
+
+### Changed
+- The "Refine this draft" box in the body preview is now a clearly labeled panel with an accent border and a primary action button, so it's no longer mistaken for part of the PR body text.
+
 ## 1.2.0
 
 GitHub Copilot PR parity. Everything below is opt-in and uses your own model/provider and GitHub token — no Copilot.
