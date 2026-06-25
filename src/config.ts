@@ -31,5 +31,8 @@ export function migrateConfig(raw: Record<string, unknown>): PrForgeConfig {
         if (raw.includeFileWalkthrough === undefined) { raw.includeFileWalkthrough = false; }
         if (raw.reReviewOnPush === undefined) { raw.reReviewOnPush = false; }
     }
+    if (!raw.schemaVersion || (raw.schemaVersion as number) < 6) {
+        raw.schemaVersion = 6;
+    }
     return raw as unknown as PrForgeConfig;
 }

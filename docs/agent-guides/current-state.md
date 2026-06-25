@@ -11,11 +11,11 @@ Started: 2026-06-25
 
 | Slice | Title | Status | Completed |
 |-------|-------|--------|-----------|
-| 12.1 | Fix lint + complete no-key path | pending | — |
-| 12.2 | GitLab PAT auth & parseRemote routing | pending | — |
-| 12.3 | GitLab MR provider: create/find/update/comment | pending | — |
-| 12.4 | GitLab inline review + full submit wiring | pending | — |
-| 12.5 | Hardening, test expansion, config schema bump | pending | — |
+| 12.1 | Fix lint + complete no-key path | complete | 2026-06-25 |
+| 12.2 | GitLab PAT auth & parseRemote routing | complete | 2026-06-25 |
+| 12.3 | GitLab MR provider: create/find/update/comment | complete | 2026-06-25 |
+| 12.4 | GitLab inline review + full submit wiring | complete | 2026-06-25 |
+| 12.5 | Hardening, test expansion, config schema bump | complete | 2026-06-25 |
 | 12.6 | Version bump, docs, VSIX packaging, publish | pending | — |
 
 ## Baseline (before phase starts)
@@ -29,4 +29,4 @@ Started: 2026-06-25
 
 ## Next recommended work
 
-Slice 12.1 — lint fixes + no-key path tests
+Slice 12.6 — Version bump, docs, VSIX packaging, publish
