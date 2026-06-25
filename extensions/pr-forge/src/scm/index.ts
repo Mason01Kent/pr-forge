@@ -24,6 +24,17 @@ export interface PrResult {
     number: number;
 }
 
+export interface InboxItem {
+    number: number;
+    title: string;
+    url: string;
+    state?: string;
+    draft?: boolean;
+    author?: string;
+    updatedAt?: string;
+    labels?: string[];
+}
+
 export interface ScmProvider {
     /** Human-readable name for error messages. */
     name: string;
@@ -31,6 +42,8 @@ export interface ScmProvider {
     createPr(payload: PrPayload): Promise<PrResult>;
     /** Find an open PR for the given head branch. Returns null if none exists. */
     findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<PrResult | null>;
+    /** List open PRs or MRs for the current repository. */
+    listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]>;
     /** Update title and body of an existing PR. */
     updatePr(payload: PrPayload & { number: number }): Promise<PrResult>;
     /** Post a plain comment on an existing PR/issue. Returns the comment URL. */

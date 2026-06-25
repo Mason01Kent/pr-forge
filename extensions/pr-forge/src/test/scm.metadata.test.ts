@@ -31,6 +31,45 @@ function mockServer(responder: (req: RecordedRequest) => { statusCode: number; b
 }
 
 describe('SCM metadata automation', () => {
+    it('lists open GitHub pull requests', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /repos/o/r/pulls?state=open&per_page=100&sort=updated&direction=desc':
+                    return {
+                        statusCode: 200,
+                        body: [{
+                            number: 4,
+                            title: 'Add inbox',
+                            html_url: 'https://github.com/o/r/pull/4',
+                            state: 'open',
+                            draft: false,
+                            updated_at: '2026-06-25T10:00:00Z',
+                            user: { login: 'alice' },
+                            labels: [{ name: 'enhancement' }],
+                        }],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const items = await provider.listOpenPrs({ owner: 'o', repo: 'r' });
+            assert.deepStrictEqual(items, [{
+                number: 4,
+                title: 'Add inbox',
+                url: 'https://github.com/o/r/pull/4',
+                state: 'open',
+                draft: false,
+                author: 'alice',
+                updatedAt: '2026-06-25T10:00:00Z',
+                labels: ['enhancement'],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
     it('attaches GitHub labels, assignees, reviewers, and milestone metadata', async () => {
         const server = await mockServer((req) => {
             switch (`${req.method} ${req.path}`) {
@@ -111,6 +150,45 @@ describe('SCM metadata automation', () => {
             assert.deepStrictEqual(createBody.assignee_ids, [21]);
             assert.deepStrictEqual(createBody.reviewer_ids, [22]);
             assert.strictEqual(createBody.milestone, 'v1.0');
+        } finally {
+            server.close();
+        }
+    });
+
+    it('lists open GitLab merge requests', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /projects/o%2Fr/merge_requests?state=opened&scope=all&per_page=100&order_by=updated_at&sort=desc':
+                    return {
+                        statusCode: 200,
+                        body: [{
+                            iid: 9,
+                            title: 'Inbox',
+                            web_url: 'https://gitlab.com/o/r/-/merge_requests/9',
+                            state: 'opened',
+                            draft: true,
+                            updated_at: '2026-06-25T11:00:00Z',
+                            author: { username: 'bob' },
+                            labels: ['backend', 'priority'],
+                        }],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const items = await provider.listOpenPrs({ owner: 'o', repo: 'r' });
+            assert.deepStrictEqual(items, [{
+                number: 9,
+                title: 'Inbox',
+                url: 'https://gitlab.com/o/r/-/merge_requests/9',
+                state: 'opened',
+                draft: true,
+                author: 'bob',
+                updatedAt: '2026-06-25T11:00:00Z',
+                labels: ['backend', 'priority'],
+            }]);
         } finally {
             server.close();
         }

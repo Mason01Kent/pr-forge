@@ -46,6 +46,7 @@ type WebviewToExtMsg =
     | { command: 'generatePrReview' }
     | { command: 'submitPr' }
     | { command: 'submitDraftPr' }
+    | { command: 'openInbox' }
     | { command: 'setApiKey' }
     | { command: 'ready' }
     | { command: 'showTools' }
@@ -82,6 +83,7 @@ export interface SidebarCallbacks {
     onGeneratePrReview: () => Promise<void>;
     onSubmitPr: () => Promise<void>;
     onSubmitDraftPr: () => Promise<void>;
+    onOpenInbox: () => Promise<void>;
     onSetApiKey: () => Promise<void>;
     onShowTools: () => void;
     onShowPreview: () => void;
@@ -188,6 +190,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'submitDraftPr':
                     this._callbacks.onSubmitDraftPr();
+                    break;
+                case 'openInbox':
+                    this._callbacks.onOpenInbox();
                     break;
                 case 'setApiKey':
                     this._callbacks.onSetApiKey();
@@ -367,6 +372,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <div class="section">
   <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit PR</span></button>
   <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit as Draft PR</span></button>
+  <button class="btn btn-secondary" id="btn-open-inbox">${ic.preview}<span>Open Inbox</span></button>
   <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR</span></button>
   <button class="btn btn-secondary" id="btn-post-review" style="display:none">${ic.review}<span>Post Review to PR</span></button>
   <button class="btn btn-secondary" id="btn-post-inline-review" style="display:none">${ic.review}<span>Post Inline Review</span></button>
@@ -432,7 +438,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-github','btn-post-review','btn-post-inline-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-inbox','btn-open-github','btn-post-review','btn-post-inline-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -441,6 +447,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-pr-review').addEventListener('click', () => vscode.postMessage({ command: 'generatePrReview' }));
   el('btn-submit-pr').addEventListener('click', () => vscode.postMessage({ command: 'submitPr' }));
   el('btn-submit-draft-pr').addEventListener('click', () => vscode.postMessage({ command: 'submitDraftPr' }));
+  el('btn-open-inbox').addEventListener('click', () => vscode.postMessage({ command: 'openInbox' }));
   el('btn-generated-open-body').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
   el('btn-generated-open-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
   el('btn-generated-preview-body').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));

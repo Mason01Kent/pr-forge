@@ -737,6 +737,71 @@ async function submitDraftPr(): Promise<void> {
     await submitPrInternal(true);
 }
 
+async function openInbox(): Promise<void> {
+    const workspaceFolder = await resolveTargetProjectFolder();
+    if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+    if (!(await ensureConfig(workspaceFolder))) return;
+
+    let remoteUrl: string;
+    try {
+        remoteUrl = execSync('git remote get-url origin', { cwd: workspaceFolder.uri.fsPath }).toString().trim();
+    } catch {
+        vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?');
+        return;
+    }
+
+    const isGitLabRemote = /gitlab\.com/i.test(remoteUrl);
+    let token: string | undefined;
+    if (isGitLabRemote) {
+        token = (await getApiKey(extensionContext, 'gitlab')) ?? undefined;
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitLab token. Use "Set API Key" → "GitLab (SCM token)" to store your personal access token (api scope required).');
+            return;
+        }
+    } else {
+        try {
+            const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+            token = session.accessToken;
+        } catch {
+            token = process.env.GITHUB_TOKEN;
+        }
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
+            return;
+        }
+    }
+
+    const remote = parseRemote(remoteUrl, token);
+    if (!remote) {
+        vscode.window.showErrorMessage(`PR Forge: Unsupported remote host. Only GitHub and GitLab are supported. Remote: ${remoteUrl}`);
+        return;
+    }
+
+    await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Loading inbox...', cancellable: false },
+        async () => {
+            const items = await remote.provider.listOpenPrs({ owner: remote.owner, repo: remote.repo });
+            if (items.length === 0) {
+                vscode.window.showInformationMessage('PR Forge: No open PRs or merge requests found.');
+                return;
+            }
+
+            const pick = await vscode.window.showQuickPick(items.map(item => ({
+                label: `#${item.number} ${item.title}`,
+                description: item.draft ? 'Draft' : item.state ?? 'open',
+                detail: [item.author ? `by ${item.author}` : '', item.updatedAt ? `updated ${item.updatedAt}` : '', item.labels?.length ? item.labels.join(', ') : ''].filter(Boolean).join(' · '),
+                url: item.url,
+            })), {
+                title: `PR Forge Inbox - ${remote.owner}/${remote.repo}`,
+                placeHolder: 'Select a pull request or merge request to open',
+            });
+            if (pick) {
+                await vscode.env.openExternal(vscode.Uri.parse(pick.url));
+            }
+        }
+    );
+}
+
 async function submitPr(): Promise<void> {
     await submitPrInternal(false);
 }
@@ -1262,6 +1327,7 @@ export function activate(context: vscode.ExtensionContext): void {
         onGeneratePrReview: generatePrReview,
         onSubmitPr: submitPr,
         onSubmitDraftPr: submitDraftPr,
+        onOpenInbox: openInbox,
         onSetApiKey: setApiKey,
         onShowTools: () => {
             provider.updateState({ viewMode: 'tools' });
@@ -1413,6 +1479,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(vscode.commands.registerCommand('prForge.generatePrReview', generatePrReview));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitPr', submitPr));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitDraftPr', submitDraftPr));
+    context.subscriptions.push(vscode.commands.registerCommand('prForge.openInbox', openInbox));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.postReview', () => { void postReviewToPr(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.postInlineReview', () => { void postInlineReview(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.setApiKey', setApiKey));

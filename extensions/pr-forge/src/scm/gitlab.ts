@@ -1,6 +1,6 @@
 import * as https from 'https';
 import * as http from 'http';
-import { ScmProvider, PrPayload, PrResult, ReviewComment } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem } from './index';
 
 function glRequest(
     baseUrl: string,
@@ -184,6 +184,40 @@ export class GitLabScmProvider implements ScmProvider {
         if (!Array.isArray(arr) || arr.length === 0) { return null; }
         const mr = arr[0];
         return (mr.iid && mr.web_url) ? { url: mr.web_url, number: mr.iid } : null;
+    }
+
+    async listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]> {
+        const { owner, repo } = payload;
+        const pid = projectId(owner, repo);
+        const query = 'state=opened&scope=all&per_page=100&order_by=updated_at&sort=desc';
+        const { json } = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests?${query}`, 'GET');
+        if (!Array.isArray(json)) {
+            return [];
+        }
+        return json.flatMap((item: {
+            iid?: number;
+            title?: string;
+            web_url?: string;
+            state?: string;
+            draft?: boolean;
+            updated_at?: string;
+            author?: { username?: string; name?: string };
+            labels?: string[];
+        }) => {
+            if (!item.iid || !item.title || !item.web_url) {
+                return [];
+            }
+            return [{
+                number: item.iid,
+                title: item.title,
+                url: item.web_url,
+                state: item.state,
+                draft: item.draft,
+                author: item.author?.username ?? item.author?.name,
+                updatedAt: item.updated_at,
+                labels: item.labels ?? [],
+            }];
+        });
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {
