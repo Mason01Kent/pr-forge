@@ -368,17 +368,50 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="card-row"><span class="label">Provider</span><span class="value" id="provider-name">-</span></div>
     <div class="card-row"><span class="label">API Key</span><span class="badge warn" id="key-badge">Not set</span></div>
     <details class="settings-group" id="settings-group">
-      <summary class="settings-summary">
+      <summary class="settings-summary" title="Expand or collapse the model picker and generation settings">
         <span class="settings-summary-label">Settings</span>
         <span class="settings-summary-hint">Model and generation toggles</span>
       </summary>
       <div class="settings-body">
-        <div class="card-row" id="model-row" style="display:none"><span class="label">Model</span><select class="select-model" id="model-select"></select></div>
-        <div class="card-row" id="run-tests-row" style="display:none"><span class="label">Run tests</span><label class="toggle"><input type="checkbox" id="chk-run-tests" checked><span class="toggle-label" id="run-tests-label">On</span></label></div>
-        <div class="card-row" id="commit-row" style="display:none"><span class="label">Recent commits</span><label class="toggle"><input type="checkbox" id="chk-commits"><span class="toggle-label" id="commits-label">Off</span></label></div>
-        <div class="card-row" id="commit-summary-row" style="display:none"><span class="label">Commit summaries</span><label class="toggle"><input type="checkbox" id="chk-commit-summaries"><span class="toggle-label" id="commit-summaries-label">Off</span></label></div>
-        <div class="card-row" id="file-walkthrough-row" style="display:none"><span class="label">File walkthrough</span><label class="toggle"><input type="checkbox" id="chk-file-walkthrough"><span class="toggle-label" id="file-walkthrough-label">Off</span></label></div>
-        <div class="card-row" id="rereview-row" style="display:none"><span class="label">Re-review on push</span><label class="toggle"><input type="checkbox" id="chk-rereview"><span class="toggle-label" id="rereview-label">Off</span></label></div>
+        <div class="card-row" id="model-row" style="display:none" title="Choose the model used for generation">
+          <span class="label">Model</span>
+          <select class="select-model" id="model-select" title="Choose the model used for PR body and review generation"></select>
+        </div>
+        <div class="card-row" id="run-tests-row" style="display:none" title="Run the configured tests before generating content">
+          <span class="label">Run tests</span>
+          <label class="toggle" title="Run the configured tests before generating content">
+            <input type="checkbox" id="chk-run-tests" checked>
+            <span class="toggle-label" id="run-tests-label">On</span>
+          </label>
+        </div>
+        <div class="card-row" id="commit-row" style="display:none" title="Include recent commits in the prompt">
+          <span class="label">Recent commits</span>
+          <label class="toggle" title="Include recent commits in the prompt">
+            <input type="checkbox" id="chk-commits">
+            <span class="toggle-label" id="commits-label">Off</span>
+          </label>
+        </div>
+        <div class="card-row" id="commit-summary-row" style="display:none" title="Append an AI-written commit summary table to the PR body">
+          <span class="label">Commit summaries</span>
+          <label class="toggle" title="Append an AI-written commit summary table to the PR body">
+            <input type="checkbox" id="chk-commit-summaries">
+            <span class="toggle-label" id="commit-summaries-label">Off</span>
+          </label>
+        </div>
+        <div class="card-row" id="file-walkthrough-row" style="display:none" title="Append a per-file changes table to the PR body">
+          <span class="label">File walkthrough</span>
+          <label class="toggle" title="Append a per-file changes table to the PR body">
+            <input type="checkbox" id="chk-file-walkthrough">
+            <span class="toggle-label" id="file-walkthrough-label">Off</span>
+          </label>
+        </div>
+        <div class="card-row" id="rereview-row" style="display:none" title="Offer to re-run the review when new commits land on the branch">
+          <span class="label">Re-review on push</span>
+          <label class="toggle" title="Offer to re-run the review when new commits land on the branch">
+            <input type="checkbox" id="chk-rereview">
+            <span class="toggle-label" id="rereview-label">Off</span>
+          </label>
+        </div>
       </div>
     </details>
     <div class="card-row" id="branch-row" style="display:none"><span class="label">Branch</span><span class="value" id="branch-name"></span></div>
