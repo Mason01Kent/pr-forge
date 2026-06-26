@@ -763,6 +763,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     _onBaseBranch = state.currentBranch !== null && state.currentBranch === state.baseBranch;
+    const _noFeatureBranch = !state.currentBranch || state.currentBranch === 'HEAD' || state.currentBranch === state.baseBranch;
     if (state.currentBranch) {
       const branchEl = el('branch-name');
       branchEl.textContent = state.currentBranch;
@@ -783,13 +784,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     allBtns.forEach(b => { if (b) b.disabled = !!state.isRunning; });
     el('btn-regen').disabled = !!state.isRunning;
 
-    const canSubmit = state.bodyExists && !_onBaseBranch;
+    const canSubmit = state.bodyExists && !_noFeatureBranch;
     const hasOpenPr = !!(state.existingPrNumber || state.submittedPrNumber);
     const openPrNum = state.existingPrNumber || state.submittedPrNumber;
-    el('btn-pr-body').disabled = !!state.isRunning || _onBaseBranch;
-    el('btn-pr-review').disabled = !!state.isRunning || _onBaseBranch;
-    el('btn-pr-body').title = _onBaseBranch ? 'Switch to a feature branch first' : ('Generates the ' + prTermLong + ' title and description from your git diff and commits.');
-    el('btn-pr-review').title = _onBaseBranch ? 'Switch to a feature branch first' : ('Generates the ' + prTermLong + ' body and a code review of your diff.');
+    el('btn-pr-body').disabled = !!state.isRunning || _noFeatureBranch;
+    el('btn-pr-review').disabled = !!state.isRunning || _noFeatureBranch;
+    el('btn-pr-body').title = _noFeatureBranch ? 'Switch to a feature branch first' : ('Generates the ' + prTermLong + ' title and description from your git diff and commits.');
+    el('btn-pr-review').title = _noFeatureBranch ? 'Switch to a feature branch first' : ('Generates the ' + prTermLong + ' body and a code review of your diff.');
     el('btn-submit-pr').disabled = !canSubmit || !!state.isRunning;
     el('btn-submit-draft-pr').disabled = !canSubmit || !!state.isRunning;
     el('btn-submit-pr').querySelector('span').textContent = state.existingPrNumber
@@ -798,17 +799,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-submit-draft-pr').querySelector('span').textContent = state.existingPrNumber
       ? ('Update Draft ' + prTerm + ' #' + state.existingPrNumber)
       : ('Submit Draft ' + prTerm);
-    el('btn-submit-pr').title = _onBaseBranch
+    el('btn-submit-pr').title = _noFeatureBranch
       ? 'Switch to a feature branch first'
       : (state.existingPrNumber
           ? ('Update the title and body of ' + prTermLong + ' #' + state.existingPrNumber + ' on GitHub or GitLab.')
           : ('Create a new ' + prTermLong + ' for this branch on GitHub or GitLab.'));
-    el('btn-submit-draft-pr').title = _onBaseBranch
+    el('btn-submit-draft-pr').title = _noFeatureBranch
       ? 'Switch to a feature branch first'
       : (state.existingPrNumber
           ? ('Update the title and body of draft ' + prTermLong + ' #' + state.existingPrNumber + '.')
           : ('Create a new draft ' + prTermLong + ' for this branch on GitHub or GitLab.'));
-    el('btn-open-existing-pr').style.display = state.configExists && state.currentBranch && !_onBaseBranch ? '' : 'none';
+    el('btn-open-existing-pr').style.display = state.configExists && !_noFeatureBranch ? '' : 'none';
     el('btn-open-existing-pr').disabled = !!state.isRunning;
     el('btn-open-existing-pr').title = _onBaseBranch
       ? 'Switch to a feature branch first'

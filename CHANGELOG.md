@@ -3,6 +3,11 @@
 All notable changes to PR Forge are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.5.3
+
+### Fixed
+- Submit PR, Submit Draft PR, and Open Existing PR buttons are now hidden when in detached HEAD state or on the base branch (main/master) — previously they remained accessible and could produce confusing errors
+
 ## 1.5.2
 
 ### Added
