@@ -3,6 +3,14 @@
 All notable changes to PR Forge are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.5.2
+
+### Added
+- **Open Inbox** - list open pull requests (GitHub) or merge requests (GitLab) for the repository from the sidebar; select any item to open it in the browser or jump straight into reviewing its threads
+- **Close PR / Close MR** - close the open pull request or merge request for the current branch directly from the sidebar, with a confirmation dialog; works on GitHub and GitLab
+- **Smart Submit/Update button** - the Submit button now checks for an existing PR or MR in the background and automatically relabels itself "Update PR #N" (or "Update MR #N") when one is already open for the branch
+- **GitHub / GitLab aware UI** - button labels, tooltips, and terminology dynamically switch between "PR" and "MR" throughout the sidebar based on whether the repository remote is GitHub or GitLab
+
 ## 1.4.0
 
 ### Added

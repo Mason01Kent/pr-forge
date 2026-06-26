@@ -300,6 +300,9 @@ async function refreshWorkspaceState(): Promise<void> {
             prReviewReady: false,
             previewTitle: null,
             previewBody: null,
+            scmHost: null,
+            existingPrNumber: null,
+            existingPrUrl: null,
         });
         return;
     }
@@ -340,6 +343,27 @@ async function refreshWorkspaceState(): Promise<void> {
     if (provider.getState().submittedPrNumber) {
         void refreshReadiness(true);
     }
+
+    // Fire-and-forget: detect SCM host and check for an existing PR/MR on this branch.
+    void (async () => {
+        try {
+            const remoteUrl = execSync('git remote get-url origin', { cwd: wf.uri.fsPath, timeout: 3000 }).toString().trim();
+            const scmHost: 'github' | 'gitlab' = /gitlab/i.test(remoteUrl) ? 'gitlab' : 'github';
+            provider.updateState({ scmHost });
+            const branch = getCurrentBranch(wf.uri.fsPath);
+            if (!branch || branch === cfg.baseBranch) {
+                provider.updateState({ existingPrNumber: null, existingPrUrl: null });
+                return;
+            }
+            const remote = await resolveRemoteContext(wf, true);
+            if (!remote) { return; }
+            const existing = await remote.provider.findOpenPr({ owner: remote.owner, repo: remote.repo, head: branch, token: remote.token });
+            provider.updateState({
+                existingPrNumber: existing?.number ?? null,
+                existingPrUrl: existing?.url ?? null,
+            });
+        } catch { /* silent — network or git errors must not block the sidebar */ }
+    })();
 }
 
 async function withStatusBarSpinner(
@@ -1424,6 +1448,51 @@ async function openIssueFlow(): Promise<void> {
     );
 }
 
+async function closePrFlow(): Promise<void> {
+    const wf = await resolveTargetProjectFolder();
+    if (!wf) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+    if (!(await ensureConfig(wf))) { return; }
+    const remote = await resolveRemoteContext(wf);
+    if (!remote) { return; }
+    const state = provider.getState();
+    const prNumber = state.existingPrNumber ?? state.submittedPrNumber;
+    if (!prNumber) {
+        vscode.window.showInformationMessage('PR Forge: No open pull request or merge request to close.');
+        return;
+    }
+    const term = state.scmHost === 'gitlab' ? 'merge request' : 'pull request';
+    const confirm = await vscode.window.showWarningMessage(
+        `Close ${term} #${prNumber} on ${remote.owner}/${remote.repo}? This cannot be undone.`,
+        { modal: true },
+        'Close'
+    );
+    if (confirm !== 'Close') { return; }
+    try {
+        await remote.provider.closePr({ owner: remote.owner, repo: remote.repo, number: prNumber, token: remote.token });
+        log(`${term} #${prNumber} closed.`);
+        telemetryEvent('closePr', { outcome: 'success' });
+        vscode.window.showInformationMessage(`PR Forge: ${term.charAt(0).toUpperCase() + term.slice(1)} #${prNumber} closed.`);
+        provider.updateState({
+            submittedPrNumber: null,
+            submittedPrUrl: null,
+            submittedPrDraft: false,
+            submittedPrTimestamp: null,
+            existingPrNumber: null,
+            existingPrUrl: null,
+            readinessState: null,
+            readinessSummary: null,
+            readinessBlockers: [],
+            readinessInfo: [],
+            readinessUpdatedAt: null,
+        });
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`Close ${term} failed: ${msg}`);
+        telemetryError('closePr', { outcome: 'error', errorKind: classifyError(err) });
+        vscode.window.showErrorMessage(`PR Forge: Could not close ${term} — ${msg}`);
+    }
+}
+
 async function submitPr(): Promise<void> {
     await submitPrInternalV2(false);
 }
@@ -1855,6 +1924,8 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
             submittedPrUrl: prUrl,
             submittedPrDraft: draft,
             submittedPrTimestamp: new Date().toLocaleTimeString(),
+            existingPrNumber: prNumber,
+            existingPrUrl: prUrl,
         });
         void refreshReadiness(true);
         const actionLabel = existingPr ? `PR #${prNumber} updated!` : `${draft ? 'Draft PR' : 'PR'} #${prNumber} created!`;
@@ -2231,6 +2302,7 @@ export function activate(context: vscode.ExtensionContext): void {
         onPostReview: () => { void postReviewToPr(); },
         onPostInlineReview: () => { void postInlineReview(); },
         onClearPr: clearPrOutput,
+        onClosePr: () => { void closePrFlow(); },
         onCancel: cancelActiveGeneration,
         onSetModel: (model: string) => {
             const wf = getWorkspaceFolderWithConfig();
@@ -2340,6 +2412,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitPr', submitPr));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.submitDraftPr', submitDraftPr));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.openInbox', openInbox));
+    context.subscriptions.push(vscode.commands.registerCommand('prForge.closePr', () => { void closePrFlow(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.openIssueFlow', () => { void openIssueFlow(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.openReviewThreads', () => { void openReviewThreads(); }));
     context.subscriptions.push(vscode.commands.registerCommand('prForge.postReview', () => { void postReviewToPr(); }));

@@ -16,10 +16,13 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 
 - **Generate PR Body** - AI-written title and description from your `base..HEAD` diff, commits, optional test output, and repository PR/MR templates when present
 - **Generate PR Review** - structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation
-- **Post Inline Review** - post a proper GitHub review with comments anchored to specific diff lines, plus committable one-line suggestions
-- **Post Review as PR Comment** - alternative: post the full review as a single comment on the submitted PR
+- **Post Inline Review** - post line-anchored inline review comments directly on the diff (GitHub review API, or GitLab discussion notes with a plain-note fallback)
+- **Post Review as PR/MR Comment** - alternative: post the full review as a single comment on the submitted pull request or merge request
+- **Open Inbox** - list all open pull requests (GitHub) or merge requests (GitLab) for the repository; select any item to open it in the browser or browse its review threads
+- **Close PR / Close MR** - close the open pull request or merge request for the current branch without leaving VS Code (GitHub and GitLab)
+- **Smart Submit/Update** - the Submit button checks for an existing PR or MR in the background and switches to "Update PR #N" automatically when one is already open for the branch
 - **Seed from Issue** - browse open issues, then create a branch or seed a draft PR body from the selected issue
-- **Submit PR / Submit Draft PR** - create or update a pull request or merge request without leaving VS Code
+- **Submit PR / Submit Draft PR** - create or update a pull request or merge request without leaving VS Code (GitHub and GitLab, including Enterprise and self-managed)
 - **Open Existing PR** - open the already-open PR or merge request for the current branch directly from the sidebar
 - **Review thread actions** - browse review threads, jump to file anchors, reply, and resolve/reopen where the host API supports it
 - **Metadata automation** - carry labels, assignees, reviewers, and milestone values into GitHub and GitLab submissions when configured
@@ -52,7 +55,7 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 
 Download the release artifact from the repo root and install it with VS Code:
 
-`pr-forge-1.5.1.vsix`
+`pr-forge-1.5.2.vsix`
 
 Use the VS Code command palette and run `Extensions: Install from VSIX...`.
 
@@ -78,15 +81,19 @@ DeepSeek · OpenAI · Anthropic · OpenRouter · Groq · Ollama (local, no key r
 
 PR Forge supports **GitHub**, **GitHub Enterprise**, **GitLab**, and **GitLab self-managed** remotes.
 
-**GitHub** - uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to create or update pull requests. If a PR already exists for your branch, it can update the title and body, compare the local draft against the existing PR, or open the existing PR instead of creating a duplicate. Draft PRs are supported. Labels, assignees, reviewers, milestone values, open issues, and review threads are surfaced through the GitHub API.
+**GitHub** - uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to create, update, or close pull requests. The sidebar detects the GitHub remote and uses "PR" terminology throughout. If a PR already exists for your branch, the Submit button automatically relabels itself "Update PR #N" and the Close button becomes available. Draft PRs are supported. Labels, assignees, reviewers, milestone values, open issues, inbox items, and review threads are all surfaced through the GitHub API.
 
-**GitLab** - uses a personal access token (set via "Set API Key" -> "GitLab (SCM token)", api scope required) to create or update merge requests. If a merge request already exists for your branch, it can update the title and description, compare the local draft against the existing MR, or open the existing MR instead of creating a duplicate. Labels, assignees, reviewers, milestone values, open issues, and review threads are surfaced through the GitLab API, including self-managed instances reached through their host-specific API base URL.
+**GitLab** - uses a personal access token (set via "Set API Key" → "GitLab (SCM token)", api scope required) to create, update, or close merge requests. The sidebar detects the GitLab remote and switches all terminology to "MR" — button labels, tooltips, and confirmation dialogs all say "merge request". If an MR already exists for your branch, the Submit button relabels itself "Update MR #N" and the Close button becomes available. Labels, assignees, reviewers, milestone values, open issues, inbox items, and review threads are surfaced through the GitLab API, including self-managed instances reached through their host-specific API base URL.
 
-**Issue seeding** - open the issue flow from the sidebar or command palette, then choose to create a branch, seed a draft PR, or do both from the selected issue.
+**Inbox** - the Open Inbox button lists all open pull requests (GitHub) or merge requests (GitLab) for the repository. Select any item to open it in the browser or jump directly into browsing its review threads.
+
+**Close PR / Close MR** - the Close button closes the open pull request or merge request for the current branch directly from the sidebar, after a confirmation dialog. Available on both GitHub and GitLab.
+
+**Issue seeding** - open the issue flow from the sidebar or command palette, then choose to create a branch, seed a draft PR/MR body, or do both from the selected issue.
 
 Repository PR/MR templates are discovered automatically from common locations such as `.github/PULL_REQUEST_TEMPLATE`, `docs/PULL_REQUEST_TEMPLATE`, and `.gitlab/merge_request_templates`, and the generated body includes that guidance when present.
 
-After submitting, **Post Review to PR** posts the full review as a single comment, or use **Post Inline Review** to post line-anchored comments directly on the diff (GitHub) or as GitLab discussions when the API has enough diff metadata, with a note fallback when it does not.
+After submitting, **Post Review to PR/MR** posts the full review as a single comment, or use **Post Inline Review** to post line-anchored comments directly on the diff (GitHub review API, or GitLab discussion notes when the API has enough diff metadata, with a plain-note fallback when it does not).
 
 **Review threads** - the sidebar can browse review threads, open the underlying file anchor, open the remote discussion, reply to a thread, and resolve or reopen a thread when the host API supports that action. GitHub and GitLab do not expose identical review-thread behavior, so PR Forge shows only the actions the host can actually perform.
 

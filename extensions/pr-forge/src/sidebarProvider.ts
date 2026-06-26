@@ -42,6 +42,9 @@ export interface SidebarState {
     readinessUpdatedAt: string | null;
     currentBranch: string | null;
     baseBranch: string | null;
+    scmHost: 'github' | 'gitlab' | null;
+    existingPrNumber: number | null;
+    existingPrUrl: string | null;
 }
 
 type WebviewToExtMsg =
@@ -76,6 +79,7 @@ type WebviewToExtMsg =
     | { command: 'setFileWalkthrough'; value: boolean }
     | { command: 'setReReviewOnPush'; value: boolean }
     | { command: 'regenerate'; instruction: string }
+    | { command: 'closePr' }
     | { command: 'cancel' };
 
 type ExtToWebviewMsg =
@@ -109,6 +113,7 @@ export interface SidebarCallbacks {
     onPostReview: () => void;
     onPostInlineReview: () => void;
     onClearPr: () => void;
+    onClosePr: () => void;
     onCancel: () => void;
     onSetModel: (model: string) => void;
     onSetRunTests: (value: boolean) => void;
@@ -164,6 +169,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         readinessUpdatedAt: null,
         currentBranch: null,
         baseBranch: null,
+        scmHost: null,
+        existingPrNumber: null,
+        existingPrUrl: null,
     };
 
     constructor(
@@ -261,6 +269,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'clearPr':
                     this._callbacks.onClearPr();
+                    break;
+                case 'closePr':
+                    this._callbacks.onClosePr();
                     break;
                 case 'cancel':
                     this._callbacks.onCancel();
@@ -456,6 +467,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <button class="btn btn-secondary" id="btn-open-review-threads" style="display:none">${ic.review}<span>Review Threads</span></button>
   <button class="btn btn-secondary" id="btn-post-review" style="display:none">${ic.review}<span>Post Review to PR</span></button>
   <button class="btn btn-secondary" id="btn-post-inline-review" style="display:none">${ic.review}<span>Post Inline Review</span></button>
+  <button class="btn btn-danger" id="btn-close-pr" style="display:none">${ic.clear}<span>Close PR</span></button>
   <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
   </div>
 
@@ -518,7 +530,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -540,6 +552,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-open-github').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-post-review').addEventListener('click', () => vscode.postMessage({ command: 'postReview' }));
   el('btn-post-inline-review').addEventListener('click', () => vscode.postMessage({ command: 'postInlineReview' }));
+  el('btn-close-pr').addEventListener('click', () => vscode.postMessage({ command: 'closePr' }));
   el('btn-clear-pr').addEventListener('click', () => vscode.postMessage({ command: 'clearPr' }));
   el('btn-activity-cancel').addEventListener('click', () => vscode.postMessage({ command: 'cancel' }));
   el('model-select').addEventListener('change', (e) => vscode.postMessage({ command: 'setModel', model: e.target.value }));
@@ -759,43 +772,66 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('branch-row').style.display = 'none';
     }
 
-    el('btn-pr-body-label').textContent = state.bodyExists ? 'Regenerate PR Body' : 'Generate PR Body';
-    el('btn-pr-review-label').textContent = state.reviewExists ? 'Regenerate PR Review' : 'Generate PR Review';
-    el('btn-pr-body').title = state.bodyExists ? 'Regenerate the PR body from the current workspace.' : 'Generate the PR body from the current workspace.';
-    el('btn-pr-review').title = state.reviewExists ? 'Regenerate the PR review from the current workspace.' : 'Generate the PR review from the current workspace.';
+    const prTerm = state.scmHost === 'gitlab' ? 'MR' : 'PR';
+    const prTermLong = state.scmHost === 'gitlab' ? 'merge request' : 'pull request';
+
+    el('btn-pr-body-label').textContent = state.bodyExists ? ('Regenerate ' + prTerm + ' Body') : ('Generate ' + prTerm + ' Body');
+    el('btn-pr-review-label').textContent = state.reviewExists ? ('Regenerate ' + prTerm + ' Review') : ('Generate ' + prTerm + ' Review');
+    el('btn-pr-body').title = state.bodyExists ? ('Regenerate the ' + prTermLong + ' body from the current workspace.') : ('Generate the ' + prTermLong + ' body from the current workspace.');
+    el('btn-pr-review').title = state.reviewExists ? ('Regenerate the ' + prTermLong + ' review from the current workspace.') : ('Generate the ' + prTermLong + ' review from the current workspace.');
 
     allBtns.forEach(b => { if (b) b.disabled = !!state.isRunning; });
     el('btn-regen').disabled = !!state.isRunning;
 
     const canSubmit = state.bodyExists && !_onBaseBranch;
+    const hasOpenPr = !!(state.existingPrNumber || state.submittedPrNumber);
+    const openPrNum = state.existingPrNumber || state.submittedPrNumber;
     el('btn-pr-body').disabled = !!state.isRunning || _onBaseBranch;
     el('btn-pr-review').disabled = !!state.isRunning || _onBaseBranch;
-    el('btn-pr-body').title = _onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR title and description to paste into your pull request or merge request.';
-    el('btn-pr-review').title = _onBaseBranch ? 'Switch to a feature branch first' : 'Generates the PR body and a code review of your diff.';
+    el('btn-pr-body').title = _onBaseBranch ? 'Switch to a feature branch first' : ('Generates the ' + prTermLong + ' title and description from your git diff and commits.');
+    el('btn-pr-review').title = _onBaseBranch ? 'Switch to a feature branch first' : ('Generates the ' + prTermLong + ' body and a code review of your diff.');
     el('btn-submit-pr').disabled = !canSubmit || !!state.isRunning;
     el('btn-submit-draft-pr').disabled = !canSubmit || !!state.isRunning;
+    el('btn-submit-pr').querySelector('span').textContent = state.existingPrNumber
+      ? ('Update ' + prTerm + ' #' + state.existingPrNumber)
+      : ('Submit ' + prTerm);
+    el('btn-submit-draft-pr').querySelector('span').textContent = state.existingPrNumber
+      ? ('Update Draft ' + prTerm + ' #' + state.existingPrNumber)
+      : ('Submit Draft ' + prTerm);
     el('btn-submit-pr').title = _onBaseBranch
       ? 'Switch to a feature branch first'
-      : 'Create a new PR or update the existing PR for this branch.';
+      : (state.existingPrNumber
+          ? ('Update the title and body of ' + prTermLong + ' #' + state.existingPrNumber + ' on GitHub or GitLab.')
+          : ('Create a new ' + prTermLong + ' for this branch on GitHub or GitLab.'));
     el('btn-submit-draft-pr').title = _onBaseBranch
       ? 'Switch to a feature branch first'
-      : 'Create a new draft PR or update the existing PR for this branch.';
+      : (state.existingPrNumber
+          ? ('Update the title and body of draft ' + prTermLong + ' #' + state.existingPrNumber + '.')
+          : ('Create a new draft ' + prTermLong + ' for this branch on GitHub or GitLab.'));
     el('btn-open-existing-pr').style.display = state.configExists && state.currentBranch && !_onBaseBranch ? '' : 'none';
     el('btn-open-existing-pr').disabled = !!state.isRunning;
     el('btn-open-existing-pr').title = _onBaseBranch
       ? 'Switch to a feature branch first'
-      : 'Open the existing PR or merge request for this branch if one exists.';
+      : ('Open the existing pull request or merge request for this branch on GitHub or GitLab.');
+    el('btn-open-inbox').title = 'List open pull requests (GitHub) or merge requests (GitLab) for this repository; open in browser or browse review threads.';
     el('btn-clear-pr').style.display = state.bodyExists || state.reviewExists || state.lastRunStatus === 'error' ? '' : 'none';
+    el('btn-close-pr').style.display = hasOpenPr ? '' : 'none';
+    el('btn-close-pr').querySelector('span').textContent = 'Close ' + prTerm + (openPrNum ? ' #' + openPrNum : '');
+    el('btn-close-pr').title = 'Close this ' + prTermLong + ' on GitHub or GitLab without merging. This action cannot be undone.';
     el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
     el('btn-open-review-threads').style.display = state.submittedPrNumber ? '' : 'none';
     el('btn-post-review').style.display = state.reviewExists && state.submittedPrUrl ? '' : 'none';
-    el('btn-post-review').title = 'Post the generated review as a comment on the submitted PR';
+    el('btn-post-review').title = 'Post the generated review as a comment on this ' + prTermLong + ' (GitHub or GitLab).';
     el('btn-post-inline-review').style.display = state.submittedPrUrl ? '' : 'none';
-    el('btn-post-inline-review').title = 'Generate and post line-anchored inline review comments on the submitted PR';
+    el('btn-post-inline-review').title = 'Post line-anchored inline review comments on this ' + prTermLong + ' (GitHub review API, or GitLab discussion notes).';
     el('btn-refresh-readiness').disabled = !!state.isRunning || !state.submittedPrNumber;
-    el('btn-refresh-readiness').title = state.submittedPrNumber ? 'Refresh merge readiness from the remote host' : 'Submit a PR or MR first';
+    el('btn-refresh-readiness').title = state.submittedPrNumber
+      ? 'Refresh merge readiness — checks CI status, approvals, and conflicts on GitHub or GitLab.'
+      : ('Submit a ' + prTermLong + ' first');
     el('btn-open-review-threads').disabled = !!state.isRunning || !state.submittedPrNumber;
-    el('btn-open-review-threads').title = state.submittedPrNumber ? 'Browse review threads and comments for the submitted PR or merge request' : 'Submit a PR or merge request first';
+    el('btn-open-review-threads').title = state.submittedPrNumber
+      ? ('Browse review threads and comments for this ' + prTermLong + ' on GitHub or GitLab.')
+      : ('Submit a ' + prTermLong + ' first');
 
     const hasGeneratedContent = state.bodyExists || state.reviewExists;
     const generatedCard = el('generated-content-card');
