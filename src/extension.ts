@@ -8,7 +8,7 @@ import { renderMarkdown } from './markdownRenderer';
 import { generatePr, regeneratePr, clearDiffCache, generateInlineFindings, getFileDiffs, generatePrBodyTemplate } from './prGenerator';
 import { mapFindingsToComments, findingsToFallbackComment } from './reviewComments';
 import { PrForgeConfig, migrateConfig } from './config';
-import { PROVIDERS, DEFAULT_MODELS, UsageStats } from './llmClient';
+import { PROVIDERS, DEFAULT_MODELS, UsageStats, listModels } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
 import { parseRemote, IssueItem, ReviewThread, ExistingPrSummary } from './scm/index';
 import { buildPrSnapshotDocument, isDuplicatePrSubmitError } from './submitFlow';
@@ -281,6 +281,14 @@ function updateArtifactState(workspaceFolder: vscode.WorkspaceFolder, config: Pr
     log(`Refreshed generated artifacts from ${outputDir}`);
 }
 
+function normalizeModelChoices(models: string[], currentModel: string): string[] {
+    const choices = models.filter((model) => model && model.trim().length > 0);
+    if (currentModel && !choices.includes(currentModel)) {
+        choices.unshift(currentModel);
+    }
+    return Array.from(new Set(choices));
+}
+
 async function refreshWorkspaceState(): Promise<void> {
     const wf = getWorkspaceFolderWithConfig();
     if (!wf) {
@@ -311,6 +319,23 @@ async function refreshWorkspaceState(): Promise<void> {
     }
     const branch = getCurrentBranch(wf.uri.fsPath);
     const keySet = await hasApiKey(extensionContext, cfg.provider);
+    const hasModelSelector = cfg.provider !== 'gitlab';
+    let availableModels: string[] = [];
+    if (hasModelSelector) {
+        const apiKey = keySet ? (await getApiKey(extensionContext, cfg.provider)) ?? '' : '';
+        try {
+            const providerInfo = PROVIDERS[cfg.provider];
+            availableModels = await listModels({
+                provider: cfg.provider,
+                apiKey,
+                model: cfg.defaultModel,
+                baseUrl: providerInfo?.baseUrl,
+            });
+        } catch {
+            availableModels = [];
+        }
+        availableModels = normalizeModelChoices(availableModels, cfg.defaultModel);
+    }
     provider.updateState({
         configExists: true,
         projectName: cfg.projectName,
@@ -319,6 +344,7 @@ async function refreshWorkspaceState(): Promise<void> {
         currentBranch: branch,
         baseBranch: cfg.baseBranch,
         currentModel: cfg.defaultModel,
+        availableModels,
         runTestsOnGenerate: cfg.runTestsOnGenerate ?? true,
         includeRecentCommits: cfg.includeRecentCommits ?? false,
         includeCommitSummaries: cfg.includeCommitSummaries ?? false,
