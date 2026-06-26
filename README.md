@@ -93,7 +93,7 @@ ext install masonkent.pr-forge
 **Install from VSIX** (no build required):
 
 ```bash
-code --install-extension extensions/pr-forge/pr-forge-1.2.1.vsix
+code --install-extension extensions/pr-forge/pr-forge-1.5.2.vsix
 ```
 
 Or via the Extensions panel: `⋯ menu → Install from VSIX…`
