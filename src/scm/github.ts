@@ -674,4 +674,16 @@ mutation($threadId: ID!) {
         }
         throw new Error((j.message || `GitHub API error ${statusCode}`) + ghHint(statusCode));
     }
+
+    async closePr(payload: { owner: string; repo: string; number: number; token: string }): Promise<void> {
+        const { owner, repo, number, token } = payload;
+        const { statusCode, json } = await ghRequest(
+            this.baseUrl,
+            { path: `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}`, method: 'PATCH', headers: { 'Content-Type': 'application/json' } },
+            token, JSON.stringify({ state: 'closed' })
+        );
+        if (statusCode === 200) { return; }
+        const j = json as { message?: string };
+        throw new Error((j.message || `GitHub API error ${statusCode}`) + ghHint(statusCode));
+    }
 }

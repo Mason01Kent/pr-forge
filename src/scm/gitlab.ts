@@ -544,4 +544,18 @@ export class GitLabScmProvider implements ScmProvider {
         }
         return summaryResult;
     }
+
+    async closePr(payload: { owner: string; repo: string; number: number; token: string }): Promise<void> {
+        const { owner, repo, number } = payload;
+        const pid = projectId(owner, repo);
+        const { statusCode, json } = await glRequest(
+            this.baseUrl, this.token,
+            `/projects/${pid}/merge_requests/${number}`,
+            'PUT', JSON.stringify({ state_event: 'close' })
+        );
+        if (statusCode === 200 || statusCode === 201) { return; }
+        const j = json as { message?: string };
+        const msg = Array.isArray(j.message) ? (j.message as string[]).join(', ') : (j.message || `GitLab API error ${statusCode}`);
+        throw new Error(msg + glHint(statusCode));
+    }
 }

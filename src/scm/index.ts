@@ -119,6 +119,8 @@ export interface ScmProvider {
         body: string;
         comments: ReviewComment[];
     }): Promise<{ url: string }>;
+    /** Close/decline an open PR or MR without merging. */
+    closePr(payload: { owner: string; repo: string; number: number; token: string }): Promise<void>;
 }
 
 /** A single line-anchored inline review comment (GitHub line-based Reviews API). */
