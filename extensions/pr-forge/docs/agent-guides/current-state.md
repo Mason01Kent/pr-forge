@@ -1,31 +1,39 @@
 # PR Forge - Live Agent Status
 
-## Active phase
+## Phase status
 
-**Phase 13 - Template-Aware PRs and Metadata Automation (v1.4.0)**
-Spec: `docs/phases/phase-13.md`
-Branch: `phase-13/template-metadata`
-Started: 2026-06-25
+**Phase 14 - PR/MR Inbox and Merge Readiness (v1.5.0)**
+Spec: `docs/phases/phase-14.md`
+Branch: `phase-14/inbox`
+Completed: 2026-06-25
+
+**Phase 15 - Review Workflow Completion (v1.6.0)**
+Spec: `docs/phases/phase-15.md`
+Branch: not started
+
+**Phase 16 - Submission and Release Hardening (v1.7.0)**
+Spec: `docs/phases/phase-16.md`
+Branch: not started
 
 ## Slice status
 
 | Slice | Title | Status | Completed |
 |-------|-------|--------|-----------|
-| 13.1 | Template-aware PR body generation | complete | 2026-06-25 |
-| 13.2 | Metadata-aware submission | complete | 2026-06-25 |
-| 13.3 | GitLab review parity | complete | 2026-06-25 |
-| 13.4 | Hardening, docs, packaging, publish | pending | - |
+| 14.1 | PR/MR inbox | complete | 2026-06-25 |
+| 14.2 | Merge readiness | complete | 2026-06-25 |
+| 14.3 | Review operations | complete | 2026-06-25 |
+| 14.4 | Issue and enterprise workflow | complete | 2026-06-25 |
 
 ## Baseline
 
-- Version: 1.4.0
-- Branch: `phase-13/template-metadata`
+- Version: 1.5.0
+- Branch: `phase-14/inbox`
 - Lint: clean
 - Compile: clean
-- Tests: 79 passing
-- VSIX: `pr-forge-1.4.0.vsix` built
-- Working tree: dirty with phase 13 release prep
+- Tests: 89 passing
+- VSIX: `pr-forge-1.5.0.vsix` built
+- Working tree: clean on `phase-14/inbox`
 
 ## Next recommended work
 
-Slice 13.4 - finish publish step if `VSCE_PAT` becomes available, then push the branch
+Phase 15 and Phase 16 are drafted in `docs/phases/` and ready for implementation planning

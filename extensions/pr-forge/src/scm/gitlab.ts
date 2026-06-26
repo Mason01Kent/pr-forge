@@ -1,6 +1,6 @@
 import * as https from 'https';
 import * as http from 'http';
-import { ScmProvider, PrPayload, PrResult, ReviewComment } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread, ExistingPrSummary, ReviewThreadReplyResult, ReviewThreadStateResult } from './index';
 
 function glRequest(
     baseUrl: string,
@@ -54,6 +54,19 @@ function glHint(statusCode: number): string {
 
 function projectId(owner: string, repo: string): string {
     return encodeURIComponent(`${owner}/${repo}`);
+}
+
+function summarizeThreadBody(body: string): string {
+    const trimmed = body.trim();
+    const firstLine = trimmed.split(/\r?\n/, 1)[0] ?? trimmed;
+    return firstLine.length > 120 ? `${firstLine.slice(0, 117).trimEnd()}...` : firstLine;
+}
+
+function pushUnique(list: string[], value: string): void {
+    const normalized = value.trim();
+    if (normalized && !list.includes(normalized)) {
+        list.push(normalized);
+    }
 }
 
 type MergeRequestVersion = {
@@ -175,15 +188,294 @@ export class GitLabScmProvider implements ScmProvider {
         throw new Error(msg + glHint(statusCode));
     }
 
-    async findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<PrResult | null> {
+    async findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<ExistingPrSummary | null> {
         const { owner, repo, head } = payload;
         const pid = projectId(owner, repo);
         const query = `state=opened&source_branch=${encodeURIComponent(head)}&per_page=1`;
         const { json } = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests?${query}`, 'GET');
-        const arr = json as Array<{ iid?: number; web_url?: string }>;
+        const arr = json as Array<{ iid?: number; web_url?: string; title?: string; description?: string; draft?: boolean }>;
         if (!Array.isArray(arr) || arr.length === 0) { return null; }
         const mr = arr[0];
-        return (mr.iid && mr.web_url) ? { url: mr.web_url, number: mr.iid } : null;
+        return (mr.iid && mr.web_url) ? { url: mr.web_url, number: mr.iid, title: mr.title, body: mr.description, draft: mr.draft } : null;
+    }
+
+    async listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]> {
+        const { owner, repo } = payload;
+        const pid = projectId(owner, repo);
+        const query = 'state=opened&scope=all&per_page=100&order_by=updated_at&sort=desc';
+        const { json } = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests?${query}`, 'GET');
+        if (!Array.isArray(json)) {
+            return [];
+        }
+        return json.flatMap((item: {
+            iid?: number;
+            title?: string;
+            web_url?: string;
+            state?: string;
+            draft?: boolean;
+            updated_at?: string;
+            author?: { username?: string; name?: string };
+            labels?: string[];
+        }) => {
+            if (!item.iid || !item.title || !item.web_url) {
+                return [];
+            }
+            return [{
+                number: item.iid,
+                title: item.title,
+                url: item.web_url,
+                state: item.state,
+                draft: item.draft,
+                author: item.author?.username ?? item.author?.name,
+                updatedAt: item.updated_at,
+                labels: item.labels ?? [],
+            }];
+        });
+    }
+
+    async listOpenIssues(payload: { owner: string; repo: string }): Promise<IssueItem[]> {
+        const { owner, repo } = payload;
+        const pid = projectId(owner, repo);
+        const query = 'state=opened&scope=all&per_page=100&order_by=updated_at&sort=desc';
+        const { json } = await glRequest(this.baseUrl, this.token, `/projects/${pid}/issues?${query}`, 'GET');
+        if (!Array.isArray(json)) {
+            return [];
+        }
+        return json.flatMap((item: {
+            iid?: number;
+            title?: string;
+            web_url?: string;
+            state?: string;
+            updated_at?: string;
+            author?: { username?: string; name?: string };
+            labels?: string[];
+            description?: string;
+        }) => {
+            if (!item.iid || !item.title || !item.web_url) {
+                return [];
+            }
+            return [{
+                number: item.iid,
+                title: item.title,
+                url: item.web_url,
+                body: item.description,
+                state: item.state,
+                author: item.author?.username ?? item.author?.name,
+                updatedAt: item.updated_at,
+                labels: item.labels ?? [],
+            }];
+        });
+    }
+
+    async getReadiness(payload: { owner: string; repo: string; number: number }): Promise<ReadinessSummary> {
+        const { owner, repo, number } = payload;
+        const pid = projectId(owner, repo);
+        const blockers: string[] = [];
+        const info: string[] = [];
+        const updatedAt = new Date().toLocaleString();
+
+        const mrResp = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests/${number}`, 'GET');
+        if (mrResp.statusCode !== 200 || typeof mrResp.json !== 'object' || mrResp.json === null) {
+            throw new Error(`GitLab API error ${mrResp.statusCode}${glHint(mrResp.statusCode)}`);
+        }
+
+        const mr = mrResp.json as {
+            draft?: boolean;
+            work_in_progress?: boolean;
+            has_conflicts?: boolean;
+            blocking_discussions_resolved?: boolean;
+            detailed_merge_status?: string;
+            head_pipeline?: { status?: string };
+        };
+
+        if (mr.draft || mr.work_in_progress) {
+            blockers.push('Merge request is marked draft');
+        }
+        if (mr.has_conflicts) {
+            blockers.push('Merge request has conflicts');
+        }
+        if (mr.blocking_discussions_resolved === false) {
+            blockers.push('Blocking discussions are unresolved');
+        }
+
+        switch ((mr.detailed_merge_status ?? '').toLowerCase()) {
+            case 'can_be_merged':
+                pushUnique(info, 'GitLab reports the merge request can be merged');
+                break;
+            case 'checking':
+            case 'approvals_syncing':
+            case 'unchecked':
+                pushUnique(info, `Merge status: ${mr.detailed_merge_status}`);
+                break;
+            case 'cannot_be_merged':
+            case 'cannot_be_merged_recheck':
+            case 'merge_conflict':
+            case 'conflicts':
+                blockers.push('GitLab reports the merge request cannot be merged cleanly');
+                break;
+            case 'draft_status':
+            case 'draft':
+                blockers.push('Merge request is still in draft state');
+                break;
+            default:
+                if (mr.detailed_merge_status) {
+                    pushUnique(info, `Merge status: ${mr.detailed_merge_status}`);
+                }
+                break;
+        }
+
+        const pipelineStatus = mr.head_pipeline?.status?.toLowerCase();
+        if (pipelineStatus === 'success') {
+            pushUnique(info, 'Latest pipeline passed');
+        } else if (['failed', 'canceled', 'cancelled'].includes(pipelineStatus ?? '')) {
+            blockers.push('Latest pipeline failed');
+        } else if (['pending', 'running', 'created', 'preparing'].includes(pipelineStatus ?? '')) {
+            blockers.push(`Latest pipeline is ${pipelineStatus}`);
+        } else if (pipelineStatus) {
+            pushUnique(info, `Latest pipeline: ${pipelineStatus}`);
+        }
+
+        try {
+            const approvalsResp = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests/${number}/approvals`, 'GET');
+            if (approvalsResp.statusCode === 200 && typeof approvalsResp.json === 'object' && approvalsResp.json !== null) {
+                const approvals = approvalsResp.json as {
+                    approvals_left?: number;
+                    approvals_required?: number;
+                    approved_by?: Array<{ user?: { username?: string; name?: string } }>;
+                };
+                if (typeof approvals.approvals_left === 'number' && approvals.approvals_left > 0) {
+                    blockers.push(`${approvals.approvals_left} approval(s) required`);
+                }
+                if (typeof approvals.approvals_required === 'number' && approvals.approvals_required > 0) {
+                    pushUnique(info, `Approvals required: ${approvals.approvals_required}`);
+                }
+                const approvedBy = approvals.approved_by?.map(entry => entry.user?.username ?? entry.user?.name).filter((value): value is string => !!value) ?? [];
+                if (approvedBy.length > 0) {
+                    pushUnique(info, `Approved by: ${approvedBy.slice(0, 3).join(', ')}`);
+                }
+            }
+        } catch {
+            // Premium approval data is optional; keep the summary usable without it.
+        }
+
+        const state = blockers.length > 0 ? 'blocked' : (info.length > 0 ? 'ready' : 'unknown');
+        const summary = blockers[0] ?? info[0] ?? 'No readiness data available';
+        return { state, summary, blockers, info, updatedAt };
+    }
+
+    async listReviewThreads(payload: { owner: string; repo: string; number: number }): Promise<ReviewThread[]> {
+        const { owner, repo, number } = payload;
+        const pid = projectId(owner, repo);
+        const { statusCode, json } = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests/${number}/discussions?per_page=100`, 'GET');
+        if (statusCode !== 200 || !Array.isArray(json)) {
+            throw new Error(`GitLab API error ${statusCode}${glHint(statusCode)}`);
+        }
+        return json.flatMap((discussion: {
+            id?: string;
+            resolved?: boolean;
+            resolvable?: boolean;
+            individual_note?: boolean;
+            notes?: Array<{
+                body?: string;
+                author?: { username?: string; name?: string };
+                web_url?: string;
+                created_at?: string;
+                position?: {
+                    new_path?: string;
+                    old_path?: string;
+                    new_line?: number;
+                    old_line?: number;
+                };
+            }>;
+        }, index: number) => {
+            const notes = discussion.notes ?? [];
+            if (notes.length === 0) {
+                return [];
+            }
+            const firstNote = notes[0];
+            const position = firstNote.position;
+            const path = position?.new_path ?? position?.old_path;
+            const line = position?.new_line ?? position?.old_line;
+            const state = discussion.resolved ? 'resolved' : 'unresolved';
+            const actionable = discussion.resolvable !== false && !discussion.resolved;
+            const titleBase = path
+                ? `${path}${typeof line === 'number' ? `:${line}` : ''}`
+                : discussion.individual_note ? 'Discussion note' : `Discussion ${index + 1}`;
+            return [{
+                id: discussion.id ?? `${titleBase}:${index}`,
+                title: `${titleBase} · ${state}`,
+                url: firstNote.web_url ?? `${this.baseUrl.replace('/api/v4', '')}/${owner}/${repo}/-/merge_requests/${number}`,
+                path,
+                line: typeof line === 'number' ? line : undefined,
+                state,
+                actionable,
+                comments: notes
+                    .filter((note): note is {
+                        body: string;
+                        author?: { username?: string; name?: string };
+                        web_url?: string;
+                        created_at?: string;
+                        position?: {
+                            new_path?: string;
+                            old_path?: string;
+                            new_line?: number;
+                            old_line?: number;
+                        };
+                    } => !!note && typeof note.body === 'string')
+                    .map(note => ({
+                        author: note.author?.username ?? note.author?.name ?? undefined,
+                        body: summarizeThreadBody(note.body),
+                        url: note.web_url ?? undefined,
+                        createdAt: note.created_at,
+                    })),
+            }];
+        });
+    }
+
+    async replyToReviewThread(payload: { owner: string; repo: string; number: number; threadId: string; body: string }): Promise<ReviewThreadReplyResult> {
+        const pid = projectId(payload.owner, payload.repo);
+        const { statusCode, json } = await glRequest(
+            this.baseUrl,
+            this.token,
+            `/projects/${pid}/merge_requests/${payload.number}/discussions/${encodeURIComponent(payload.threadId)}/notes`,
+            'POST',
+            JSON.stringify({ body: payload.body }),
+        );
+        const note = json as { web_url?: string; message?: string };
+        if ((statusCode === 200 || statusCode === 201) && note.web_url) {
+            return { url: note.web_url };
+        }
+        throw new Error((note.message ?? `GitLab API error ${statusCode}`) + glHint(statusCode));
+    }
+
+    async resolveReviewThread(payload: { owner: string; repo: string; number: number; threadId: string }): Promise<ReviewThreadStateResult> {
+        return this.setReviewThreadState(payload, true);
+    }
+
+    async reopenReviewThread(payload: { owner: string; repo: string; number: number; threadId: string }): Promise<ReviewThreadStateResult> {
+        return this.setReviewThreadState(payload, false);
+    }
+
+    async setReviewThreadResolved(payload: { owner: string; repo: string; number: number; threadId: string; resolved: boolean }): Promise<ReviewThreadStateResult> {
+        return payload.resolved ? this.resolveReviewThread(payload) : this.reopenReviewThread(payload);
+    }
+
+    private async setReviewThreadState(
+        payload: { owner: string; repo: string; number: number; threadId: string },
+        resolved: boolean,
+    ): Promise<ReviewThreadStateResult> {
+        const pid = projectId(payload.owner, payload.repo);
+        const { statusCode, json } = await glRequest(
+            this.baseUrl,
+            this.token,
+            `/projects/${pid}/merge_requests/${payload.number}/discussions/${encodeURIComponent(payload.threadId)}?resolved=${resolved ? 'true' : 'false'}`,
+            'PUT',
+        );
+        const discussion = json as { message?: string };
+        if (statusCode === 200) {
+            return { state: resolved ? 'resolved' : 'unresolved' };
+        }
+        throw new Error((discussion.message ?? `GitLab API error ${statusCode}`) + glHint(statusCode));
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {

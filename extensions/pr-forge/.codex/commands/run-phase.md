@@ -1,9 +1,9 @@
 ---
-description: Orchestrate an entire project phase — loop every remaining slice (implement → audit → commit), pass the gate, then roll into the next phase.
-argument-hint: "[phase, e.g. '10' or 'Phase 11' — omit for the current active phase]"
+description: Orchestrate an entire project phase - loop every remaining slice (implement -> audit -> commit), pass the gate, then roll into the next phase and repeat.
+argument-hint: "[phase, e.g. '10' or 'Phase 11' - omit for the current active phase]"
 ---
 
-You are the **orchestrator**. Run this session on Opus. Drive a full project phase: loop
+You are the orchestrator. Run this session on Opus. Drive a full project phase: loop
 through every remaining slice in serial order, then pass the phase gate, then roll into the
 next phase and repeat. You do the orchestration yourself; you delegate only implementation
 and audit to subagents.
@@ -11,19 +11,19 @@ and audit to subagents.
 Target phase: **$ARGUMENTS** (if empty, determine the active phase from the project's
 current-state or planning doc).
 
-## Model tiering — the main cost/quality failure mode
+## Model tiering - the main cost/quality failure mode
 
 Subagent frontmatter `model:` is unreliable here; a subagent silently inherits the parent
 model unless you pass `model:` explicitly on the Agent call. So:
 
 - Keep this orchestrator on **Opus**.
-- Invoke the **implementer** with explicit `model: sonnet` on every Agent call.
-- Invoke the **auditor** with explicit `model: opus`.
+- Invoke the implementer with explicit `model: sonnet` on every Agent call.
+- Invoke the auditor with explicit `model: opus`.
 
 "Opus for orchestration and audit, Sonnet for all implementation agents." Scope the model
-to each call — never let the implementer run as Opus just because the session is Opus.
+to each call - never let the implementer run as Opus just because the session is Opus.
 
-## STEP 0 — Reconcile the slice list (mandatory hard gate)
+## STEP 0 - Reconcile the slice list (mandatory hard gate)
 
 Before any work, build the authoritative remaining-slice list:
 
@@ -32,7 +32,7 @@ Before any work, build the authoritative remaining-slice list:
 2. Read the phase spec (e.g. `docs/phases/` or equivalent) for the serial chain and each
    slice's acceptance criteria.
 3. Cross-check the two. **If they disagree on slice numbering, what is done, or where the
-   gate is — STOP and report the conflict. Do not guess.**
+   gate is - STOP and report the conflict. Do not guess.**
 4. Produce the ordered list of remaining slices and confirm it with a one-line summary
    before starting the loop.
 
@@ -49,8 +49,8 @@ Before any work, build the authoritative remaining-slice list:
    and a numbered list of blocking findings.
 
 4. **Loop on findings.** If NO-GO, or CONDITIONAL GO with blocking findings, send the
-   numbered `file:line — issue` list back to the implementer (model: sonnet) and re-audit.
-   **Cap at 3 implement→audit cycles per slice.**
+   numbered `file:line - issue` list back to the implementer (model: sonnet) and re-audit.
+   **Cap at 3 implement->audit cycles per slice.**
 
 5. **HARD STOP conditions** (halt the entire run, commit nothing past the last green slice,
    report outstanding blockers):
@@ -88,7 +88,7 @@ After a GO gate:
    - push the completed phase branch if it is not already on origin
 3. Create or switch to a fresh branch for the next phase before doing any work on it.
 4. Confirm the next phase's prerequisites are satisfied (each phase spec should have a
-   prerequisites section). **If a prerequisite is unmet, STOP and report** — do not force
+   prerequisites section). **If a prerequisite is unmet, STOP and report** - do not force
    entry.
 5. If clear, restate the new target phase in one line and re-run from STEP 0 for it.
 6. **Branch policy:** create a new branch per phase unless the project's conventions say
@@ -97,7 +97,7 @@ After a GO gate:
 ## NEVER merge to main autonomously (hard rule)
 
 This loop never merges, fast-forwards, rebases onto, pushes to, or opens-and-merges a PR
-into `main` — under any circumstances, including a GO gate. Slice checkpoint commits land on
+into `main` - under any circumstances, including a GO gate. Slice checkpoint commits land on
 the working/phase branch only. Integration into `main` is the developer's manual decision.
 If the loop reaches a point where merging would be the next step, STOP and report that the
 branch is ready for review and merge. Do not `git merge`, `git push origin main`, or
@@ -105,7 +105,7 @@ branch is ready for review and merge. Do not `git merge`, `git push origin main`
 
 ## Permissions / hands-off
 
-Subagents cannot show interactive permission prompts — a call matching an `ask` rule is
+Subagents cannot show interactive permission prompts - a call matching an `ask` rule is
 treated as denied. A full multi-slice, multi-phase run does many subagent writes and several
 commits, so unattended operation needs `acceptEdits` (or a sandboxed
 `--dangerously-skip-permissions`) and commit authorization. If a subagent write or a commit
@@ -114,7 +114,7 @@ and report rather than skipping the doc update or the commit.
 
 ## Reporting
 
-Keep chat concise. Emit a short status line as each slice passes (`Slice N: GO — <verdict>`),
+Keep chat concise. Emit a short status line as each slice passes (`Slice N: GO - <verdict>`),
 and a final summary: slices completed, any hard stop and why, gate verdict(s), phases
 advanced, commands run with pass/fail, `git status --short`, and confirmation that the live
 status doc was updated.

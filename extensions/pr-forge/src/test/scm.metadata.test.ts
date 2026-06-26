@@ -31,6 +31,236 @@ function mockServer(responder: (req: RecordedRequest) => { statusCode: number; b
 }
 
 describe('SCM metadata automation', () => {
+    it('lists open GitHub pull requests', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /repos/o/r/pulls?state=open&per_page=100&sort=updated&direction=desc':
+                    return {
+                        statusCode: 200,
+                        body: [{
+                            number: 4,
+                            title: 'Add inbox',
+                            html_url: 'https://github.com/o/r/pull/4',
+                            state: 'open',
+                            draft: false,
+                            updated_at: '2026-06-25T10:00:00Z',
+                            user: { login: 'alice' },
+                            labels: [{ name: 'enhancement' }],
+                        }],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const items = await provider.listOpenPrs({ owner: 'o', repo: 'r' });
+            assert.deepStrictEqual(items, [{
+                number: 4,
+                title: 'Add inbox',
+                url: 'https://github.com/o/r/pull/4',
+                state: 'open',
+                draft: false,
+                author: 'alice',
+                updatedAt: '2026-06-25T10:00:00Z',
+                labels: ['enhancement'],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('lists open GitHub issues', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /repos/o/r/issues?state=open&per_page=100&sort=updated&direction=desc':
+                    return {
+                        statusCode: 200,
+                        body: [{
+                            number: 12,
+                            title: 'Track upload progress',
+                            html_url: 'https://github.com/o/r/issues/12',
+                            state: 'open',
+                            updated_at: '2026-06-25T09:30:00Z',
+                            user: { login: 'alice' },
+                            labels: [{ name: 'enhancement' }],
+                            body: 'Users need a progress bar.',
+                        }],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const items = await provider.listOpenIssues({ owner: 'o', repo: 'r' });
+            assert.deepStrictEqual(items, [{
+                number: 12,
+                title: 'Track upload progress',
+                url: 'https://github.com/o/r/issues/12',
+                body: 'Users need a progress bar.',
+                state: 'open',
+                author: 'alice',
+                updatedAt: '2026-06-25T09:30:00Z',
+                labels: ['enhancement'],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('summarizes GitHub merge readiness from statuses, checks, and reviews', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /repos/o/r/pulls/4':
+                    return {
+                        statusCode: 200,
+                        body: {
+                            draft: false,
+                            mergeable: true,
+                            mergeable_state: 'clean',
+                            head: { sha: 'abc123', ref: 'feat' },
+                            requested_reviewers: [{ login: 'alice' }],
+                        },
+                    };
+                case 'GET /repos/o/r/commits/abc123/status':
+                    return { statusCode: 200, body: { state: 'success', statuses: [{ context: 'ci', state: 'success' }] } };
+                case 'GET /repos/o/r/commits/abc123/check-runs?filter=latest&per_page=100':
+                    return { statusCode: 200, body: { check_runs: [{ name: 'build', conclusion: 'success', status: 'completed' }] } };
+                case 'GET /repos/o/r/pulls/4/reviews?per_page=100':
+                    return {
+                        statusCode: 200,
+                        body: [
+                            { state: 'APPROVED', submitted_at: '2026-06-25T12:00:00Z', user: { login: 'alice' } },
+                        ],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const readiness = await provider.getReadiness({ owner: 'o', repo: 'r', number: 4 });
+            assert.strictEqual(readiness.state, 'ready');
+            assert.ok(readiness.info.some(line => line.includes('passing') || line.includes('Approvals')));
+            assert.strictEqual(readiness.blockers.length, 0);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('lists GitHub review threads and comments', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'POST /graphql':
+                    return {
+                        statusCode: 200,
+                        body: {
+                            data: {
+                                repository: {
+                                    pullRequest: {
+                                        reviewThreads: {
+                                            nodes: [
+                                                {
+                                                    id: 'thread-1',
+                                                    path: 'src/app.ts',
+                                                    line: 12,
+                                                    isResolved: false,
+                                                    comments: {
+                                                        nodes: [
+                                                            {
+                                                                body: 'Please tighten this up',
+                                                                url: 'https://github.com/o/r/pull/4#discussion_r1',
+                                                                createdAt: '2026-06-25T10:00:00Z',
+                                                                author: { login: 'alice' },
+                                                                path: 'src/app.ts',
+                                                                line: 12,
+                                                            },
+                                                            {
+                                                                body: 'Fixed in the next commit',
+                                                                url: 'https://github.com/o/r/pull/4#discussion_r2',
+                                                                createdAt: '2026-06-25T10:05:00Z',
+                                                                author: { login: 'bob' },
+                                                                path: 'src/app.ts',
+                                                                line: 12,
+                                                            },
+                                                        ],
+                                                    },
+                                                },
+                                            ],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const threads = await provider.listReviewThreads({ owner: 'o', repo: 'r', number: 4 });
+            assert.deepStrictEqual(threads, [{
+                id: 'thread-1',
+                title: 'src/app.ts:12 · unresolved',
+                url: 'https://github.com/o/r/pull/4#discussion_r1',
+                path: 'src/app.ts',
+                line: 12,
+                state: 'unresolved',
+                actionable: true,
+                comments: [
+                    {
+                        author: 'alice',
+                        body: 'Please tighten this up',
+                        url: 'https://github.com/o/r/pull/4#discussion_r1',
+                        createdAt: '2026-06-25T10:00:00Z',
+                    },
+                    {
+                        author: 'bob',
+                        body: 'Fixed in the next commit',
+                        url: 'https://github.com/o/r/pull/4#discussion_r2',
+                        createdAt: '2026-06-25T10:05:00Z',
+                    },
+                ],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('replies to and resolves GitHub review threads', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'POST /graphql':
+                    if (req.body.includes('addPullRequestReviewThreadReply')) {
+                        return { statusCode: 200, body: { data: { addPullRequestReviewThreadReply: { comment: { url: 'https://github.com/o/r/pull/4#discussion_r99' } } } } };
+                    }
+                    if (req.body.includes('resolveReviewThread')) {
+                        return { statusCode: 200, body: { data: { resolveReviewThread: { thread: { id: 'thread-1' } } } } };
+                    }
+                    if (req.body.includes('unresolveReviewThread')) {
+                        return { statusCode: 200, body: { data: { unresolveReviewThread: { thread: { id: 'thread-1' } } } } };
+                    }
+                    return { statusCode: 404, body: { message: `unexpected graphql ${req.body}` } };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const reply = await provider.replyToReviewThread({ owner: 'o', repo: 'r', number: 4, threadId: 'thread-1', body: 'Reply body' });
+            assert.strictEqual(reply.url, 'https://github.com/o/r/pull/4#discussion_r99');
+            await provider.resolveReviewThread({ owner: 'o', repo: 'r', number: 4, threadId: 'thread-1' });
+            await provider.reopenReviewThread({ owner: 'o', repo: 'r', number: 4, threadId: 'thread-1' });
+            assert.ok(server.requests.some(request => request.body.includes('addPullRequestReviewThreadReply')));
+            assert.ok(server.requests.some(request => request.body.includes('resolveReviewThread')));
+            assert.ok(server.requests.some(request => request.body.includes('unresolveReviewThread')));
+        } finally {
+            server.close();
+        }
+    });
+
     it('attaches GitHub labels, assignees, reviewers, and milestone metadata', async () => {
         const server = await mockServer((req) => {
             switch (`${req.method} ${req.path}`) {
@@ -111,6 +341,214 @@ describe('SCM metadata automation', () => {
             assert.deepStrictEqual(createBody.assignee_ids, [21]);
             assert.deepStrictEqual(createBody.reviewer_ids, [22]);
             assert.strictEqual(createBody.milestone, 'v1.0');
+        } finally {
+            server.close();
+        }
+    });
+
+    it('lists open GitLab merge requests', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /projects/o%2Fr/merge_requests?state=opened&scope=all&per_page=100&order_by=updated_at&sort=desc':
+                    return {
+                        statusCode: 200,
+                        body: [{
+                            iid: 9,
+                            title: 'Inbox',
+                            web_url: 'https://gitlab.com/o/r/-/merge_requests/9',
+                            state: 'opened',
+                            draft: true,
+                            updated_at: '2026-06-25T11:00:00Z',
+                            author: { username: 'bob' },
+                            labels: ['backend', 'priority'],
+                        }],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const items = await provider.listOpenPrs({ owner: 'o', repo: 'r' });
+            assert.deepStrictEqual(items, [{
+                number: 9,
+                title: 'Inbox',
+                url: 'https://gitlab.com/o/r/-/merge_requests/9',
+                state: 'opened',
+                draft: true,
+                author: 'bob',
+                updatedAt: '2026-06-25T11:00:00Z',
+                labels: ['backend', 'priority'],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('lists open GitLab issues', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /projects/o%2Fr/issues?state=opened&scope=all&per_page=100&order_by=updated_at&sort=desc':
+                    return {
+                        statusCode: 200,
+                        body: [{
+                            iid: 19,
+                            title: 'Add branch seeding',
+                            web_url: 'https://gitlab.com/o/r/-/issues/19',
+                            state: 'opened',
+                            updated_at: '2026-06-25T09:40:00Z',
+                            author: { username: 'bob' },
+                            labels: ['backend', 'workflow'],
+                            description: 'Create a branch from issue metadata.',
+                        }],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const items = await provider.listOpenIssues({ owner: 'o', repo: 'r' });
+            assert.deepStrictEqual(items, [{
+                number: 19,
+                title: 'Add branch seeding',
+                url: 'https://gitlab.com/o/r/-/issues/19',
+                body: 'Create a branch from issue metadata.',
+                state: 'opened',
+                author: 'bob',
+                updatedAt: '2026-06-25T09:40:00Z',
+                labels: ['backend', 'workflow'],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('summarizes GitLab merge readiness with blockers', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /projects/o%2Fr/merge_requests/9':
+                    return {
+                        statusCode: 200,
+                        body: {
+                            draft: false,
+                            work_in_progress: false,
+                            has_conflicts: false,
+                            blocking_discussions_resolved: true,
+                            detailed_merge_status: 'checking',
+                            head_pipeline: { status: 'pending' },
+                        },
+                    };
+                case 'GET /projects/o%2Fr/merge_requests/9/approvals':
+                    return {
+                        statusCode: 200,
+                        body: {
+                            approvals_left: 1,
+                            approvals_required: 2,
+                            approved_by: [{ user: { username: 'alice' } }],
+                        },
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const readiness = await provider.getReadiness({ owner: 'o', repo: 'r', number: 9 });
+            assert.strictEqual(readiness.state, 'blocked');
+            assert.ok(readiness.blockers.some(line => line.includes('approval') || line.includes('pipeline')));
+            assert.ok(readiness.info.some(line => line.includes('Approvals required') || line.includes('Approved by')));
+        } finally {
+            server.close();
+        }
+    });
+
+    it('lists GitLab review threads and comments', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'GET /projects/o%2Fr/merge_requests/9/discussions?per_page=100':
+                    return {
+                        statusCode: 200,
+                        body: [
+                            {
+                                id: 'disc-1',
+                                resolved: false,
+                                resolvable: true,
+                                notes: [
+                                    {
+                                        body: 'Please rename this method',
+                                        web_url: 'https://gitlab.com/o/r/-/merge_requests/9#note_1',
+                                        created_at: '2026-06-25T11:00:00Z',
+                                        author: { username: 'alice' },
+                                        position: {
+                                            new_path: 'src/app.ts',
+                                            new_line: 21,
+                                        },
+                                    },
+                                    {
+                                        body: 'Updated in the latest push',
+                                        web_url: 'https://gitlab.com/o/r/-/merge_requests/9#note_2',
+                                        created_at: '2026-06-25T11:05:00Z',
+                                        author: { username: 'bob' },
+                                    },
+                                ],
+                            },
+                        ],
+                    };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const threads = await provider.listReviewThreads({ owner: 'o', repo: 'r', number: 9 });
+            assert.deepStrictEqual(threads, [{
+                id: 'disc-1',
+                title: 'src/app.ts:21 · unresolved',
+                url: 'https://gitlab.com/o/r/-/merge_requests/9#note_1',
+                path: 'src/app.ts',
+                line: 21,
+                state: 'unresolved',
+                actionable: true,
+                comments: [
+                    {
+                        author: 'alice',
+                        body: 'Please rename this method',
+                        url: 'https://gitlab.com/o/r/-/merge_requests/9#note_1',
+                        createdAt: '2026-06-25T11:00:00Z',
+                    },
+                    {
+                        author: 'bob',
+                        body: 'Updated in the latest push',
+                        url: 'https://gitlab.com/o/r/-/merge_requests/9#note_2',
+                        createdAt: '2026-06-25T11:05:00Z',
+                    },
+                ],
+            }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('replies to and resolves GitLab review threads', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'POST /projects/o%2Fr/merge_requests/9/discussions/thread-1/notes':
+                    return { statusCode: 201, body: { web_url: 'https://gitlab.com/o/r/-/merge_requests/9#note_99' } };
+                case 'PUT /projects/o%2Fr/merge_requests/9/discussions/thread-1?resolved=true':
+                case 'PUT /projects/o%2Fr/merge_requests/9/discussions/thread-1?resolved=false':
+                    return { statusCode: 200, body: { id: 'thread-1', resolved: true } };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const reply = await provider.replyToReviewThread({ owner: 'o', repo: 'r', number: 9, threadId: 'thread-1', body: 'Reply body' });
+            assert.strictEqual(reply.url, 'https://gitlab.com/o/r/-/merge_requests/9#note_99');
+            await provider.resolveReviewThread({ owner: 'o', repo: 'r', number: 9, threadId: 'thread-1' });
+            await provider.reopenReviewThread({ owner: 'o', repo: 'r', number: 9, threadId: 'thread-1' });
+            assert.strictEqual(server.requests[0].path, '/projects/o%2Fr/merge_requests/9/discussions/thread-1/notes');
         } finally {
             server.close();
         }

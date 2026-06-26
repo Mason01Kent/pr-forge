@@ -2,7 +2,7 @@
   "name": "pr-forge",
   "displayName": "PR Forge",
   "description": "Generate PR titles, descriptions, and review summaries from git diffs, then submit or update pull requests and merge requests from VS Code.",
-  "version": "1.4.0",
+  "version": "1.5.1",
   "publisher": "masonkent",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -85,6 +85,14 @@
       {
         "command": "prForge.postReview",
         "title": "PR Forge: Post Review as PR Comment"
+      },
+      {
+        "command": "prForge.openReviewThreads",
+        "title": "PR Forge: Browse Review Threads"
+      },
+      {
+        "command": "prForge.openIssueFlow",
+        "title": "PR Forge: Seed from Issue"
       },
       {
         "command": "prForge.postInlineReview",

@@ -16,7 +16,7 @@ and closing the last meaningful GitLab parity gaps.
 - Slice 13.1 complete
 - Slice 13.2 complete
 - Slice 13.3 complete
-- Slice 13.4 pending on Marketplace publish access
+- Slice 13.4 complete
 
 ## Product bets
 
@@ -165,3 +165,5 @@ The phase is ready to close only when:
 - README and changelog match the shipped behavior
 - the branch is pushed to origin
 - Marketplace publish is completed if `VSCE_PAT` was available
+
+Phase 13 is complete.
