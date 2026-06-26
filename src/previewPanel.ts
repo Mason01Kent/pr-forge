@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import { renderMarkdown } from './markdownRenderer';
 
 export type PreviewContent =
-    | { kind: 'prBody';  title: string; body: string; timestamp: string; headBranch?: string; baseBranch?: string }
+    | { kind: 'prBody';  title: string; body: string; timestamp: string; headBranch?: string; baseBranch?: string; hasSubmittedPr?: boolean }
     | { kind: 'prReview'; body: string; timestamp: string };
 
 export class PreviewPanel {
@@ -125,12 +125,15 @@ export class PreviewPanel {
         // Build toolbar right buttons
         let toolbarRightHtml = '';
         if (isPrBody) {
+            const hasSubmittedPr = this._content.kind === 'prBody' && this._content.hasSubmittedPr === true;
+            const submitLabel = hasSubmittedPr ? 'Update PR' : 'Submit PR';
+            const draftLabel = hasSubmittedPr ? 'Update Draft' : 'Submit Draft';
             toolbarRightHtml = `
                 <button class="btn btn-secondary" id="btn-copy-title">Copy Title</button>
                 <button class="btn btn-secondary" id="btn-copy-body">Copy Body</button>
                 <button class="btn btn-secondary" id="btn-open-editor">Open in Editor</button>
-                <button class="btn btn-draft-pr" id="btn-submit-draft">Submit / Update Draft</button>
-                <button class="btn btn-submit-pr" id="btn-submit-pr">Submit / Update PR</button>`;
+                <button class="btn btn-draft-pr" id="btn-submit-draft">${draftLabel}</button>
+                <button class="btn btn-submit-pr" id="btn-submit-pr">${submitLabel}</button>`;
         } else {
             toolbarRightHtml = `
                 <button class="btn btn-secondary" id="btn-copy-review">Copy Review</button>
