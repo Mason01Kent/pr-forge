@@ -1,6 +1,6 @@
 import * as https from 'https';
 import * as http from 'http';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread, ExistingPrSummary } from './index';
 
 function glRequest(
     baseUrl: string,
@@ -188,15 +188,15 @@ export class GitLabScmProvider implements ScmProvider {
         throw new Error(msg + glHint(statusCode));
     }
 
-    async findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<PrResult | null> {
+    async findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<ExistingPrSummary | null> {
         const { owner, repo, head } = payload;
         const pid = projectId(owner, repo);
         const query = `state=opened&source_branch=${encodeURIComponent(head)}&per_page=1`;
         const { json } = await glRequest(this.baseUrl, this.token, `/projects/${pid}/merge_requests?${query}`, 'GET');
-        const arr = json as Array<{ iid?: number; web_url?: string }>;
+        const arr = json as Array<{ iid?: number; web_url?: string; title?: string; description?: string; draft?: boolean }>;
         if (!Array.isArray(arr) || arr.length === 0) { return null; }
         const mr = arr[0];
-        return (mr.iid && mr.web_url) ? { url: mr.web_url, number: mr.iid } : null;
+        return (mr.iid && mr.web_url) ? { url: mr.web_url, number: mr.iid, title: mr.title, body: mr.description, draft: mr.draft } : null;
     }
 
     async listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]> {

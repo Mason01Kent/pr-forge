@@ -129,8 +129,8 @@ export class PreviewPanel {
                 <button class="btn btn-secondary" id="btn-copy-title">Copy Title</button>
                 <button class="btn btn-secondary" id="btn-copy-body">Copy Body</button>
                 <button class="btn btn-secondary" id="btn-open-editor">Open in Editor</button>
-                <button class="btn btn-draft-pr" id="btn-submit-draft">Submit as Draft</button>
-                <button class="btn btn-submit-pr" id="btn-submit-pr">Submit PR</button>`;
+                <button class="btn btn-draft-pr" id="btn-submit-draft">Submit / Update Draft</button>
+                <button class="btn btn-submit-pr" id="btn-submit-pr">Submit / Update PR</button>`;
         } else {
             toolbarRightHtml = `
                 <button class="btn btn-secondary" id="btn-copy-review">Copy Review</button>
@@ -239,4 +239,3 @@ function escapeHtml(text: string): string {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
 }
-

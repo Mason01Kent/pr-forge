@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as https from 'https';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread, ExistingPrSummary } from './index';
 
 function ghRequest(
     baseUrl: string,
@@ -211,7 +211,7 @@ export class GitHubScmProvider implements ScmProvider {
         throw new Error(msg + ghHint(statusCode));
     }
 
-    async findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<PrResult | null> {
+    async findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<ExistingPrSummary | null> {
         const { owner, repo, head } = payload;
         const query = `head=${enc(owner)}%3A${enc(head)}&state=open&per_page=1`;
         const { json } = await ghRequest(
@@ -219,10 +219,10 @@ export class GitHubScmProvider implements ScmProvider {
             { path: `/repos/${enc(owner)}/${enc(repo)}/pulls?${query}`, method: 'GET' },
             this.token
         );
-        const arr = json as Array<{ html_url?: string; number?: number }>;
+        const arr = json as Array<{ html_url?: string; number?: number; title?: string; body?: string; draft?: boolean }>;
         if (!Array.isArray(arr) || arr.length === 0) { return null; }
         const pr = arr[0];
-        return (pr.html_url && pr.number) ? { url: pr.html_url, number: pr.number } : null;
+        return (pr.html_url && pr.number) ? { url: pr.html_url, number: pr.number, title: pr.title, body: pr.body, draft: pr.draft } : null;
     }
 
     async listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]> {

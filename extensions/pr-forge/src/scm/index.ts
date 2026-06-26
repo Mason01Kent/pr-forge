@@ -24,6 +24,12 @@ export interface PrResult {
     number: number;
 }
 
+export interface ExistingPrSummary extends PrResult {
+    title?: string;
+    body?: string;
+    draft?: boolean;
+}
+
 export interface InboxItem {
     number: number;
     title: string;
@@ -78,7 +84,7 @@ export interface ScmProvider {
     /** Create a new pull/merge request. */
     createPr(payload: PrPayload): Promise<PrResult>;
     /** Find an open PR for the given head branch. Returns null if none exists. */
-    findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<PrResult | null>;
+    findOpenPr(payload: Omit<PrPayload, 'title' | 'body' | 'base' | 'draft'>): Promise<ExistingPrSummary | null>;
     /** List open PRs or MRs for the current repository. */
     listOpenPrs(payload: { owner: string; repo: string }): Promise<InboxItem[]>;
     /** List open issues for the current repository. */

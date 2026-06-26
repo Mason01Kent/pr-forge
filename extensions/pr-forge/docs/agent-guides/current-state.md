@@ -7,6 +7,14 @@ Spec: `docs/phases/phase-14.md`
 Branch: `phase-14/inbox`
 Completed: 2026-06-25
 
+**Phase 15 - Review Workflow Completion (v1.6.0)**
+Spec: `docs/phases/phase-15.md`
+Branch: not started
+
+**Phase 16 - Submission and Release Hardening (v1.7.0)**
+Spec: `docs/phases/phase-16.md`
+Branch: not started
+
 ## Slice status
 
 | Slice | Title | Status | Completed |
@@ -28,4 +36,4 @@ Completed: 2026-06-25
 
 ## Next recommended work
 
-Phase 14 complete - no further phases are defined in `docs/phases/`
+Phase 15 and Phase 16 are drafted in `docs/phases/` and ready for implementation planning

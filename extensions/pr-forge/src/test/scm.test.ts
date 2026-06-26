@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as http from 'http';
-import { parseRemote, GitLabScmProvider } from '../scm';
+import { parseRemote, GitLabScmProvider, GitHubScmProvider } from '../scm';
 
 describe('parseRemote', () => {
   it('parses GitHub HTTPS remotes', () => {
@@ -133,12 +133,27 @@ describe('GitLabScmProvider', () => {
         } finally { mock.close(); }
     });
 
+    it('findOpenPr returns PR details for GitHub', async () => {
+        const mock = await mockGlServer(200, [{ html_url: 'https://github.com/g/r/pull/12', number: 12, title: 'Draft update', body: 'Body v2', draft: true }]);
+        try {
+            const provider = new GitHubScmProvider('tok', mock.url);
+            const result = await provider.findOpenPr({ owner: 'g', repo: 'r', head: 'feat', token: 'tok' });
+            assert.strictEqual(result?.number, 12);
+            assert.strictEqual(result?.title, 'Draft update');
+            assert.strictEqual(result?.body, 'Body v2');
+            assert.strictEqual(result?.draft, true);
+        } finally { mock.close(); }
+    });
+
     it('findOpenPr returns PrResult when MR exists', async () => {
-        const mock = await mockGlServer(200, [{ iid: 7, web_url: 'https://gitlab.com/g/r/-/merge_requests/7' }]);
+        const mock = await mockGlServer(200, [{ iid: 7, web_url: 'https://gitlab.com/g/r/-/merge_requests/7', title: 'Existing MR', description: 'Body v1', draft: false }]);
         try {
             const provider = new GitLabScmProvider('tok', mock.url);
             const result = await provider.findOpenPr({ owner: 'g', repo: 'r', head: 'feat', token: 'tok' });
             assert.strictEqual(result?.number, 7);
+            assert.strictEqual(result?.title, 'Existing MR');
+            assert.strictEqual(result?.body, 'Body v1');
+            assert.strictEqual(result?.draft, false);
         } finally { mock.close(); }
     });
 
