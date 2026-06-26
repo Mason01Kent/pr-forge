@@ -10,7 +10,8 @@ import { mapFindingsToComments, findingsToFallbackComment } from './reviewCommen
 import { PrForgeConfig, migrateConfig } from './config';
 import { PROVIDERS, DEFAULT_MODELS, UsageStats } from './llmClient';
 import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
-import { parseRemote, IssueItem, ReviewThread } from './scm/index';
+import { parseRemote, IssueItem, ReviewThread, ExistingPrSummary } from './scm/index';
+import { buildPrSnapshotDocument, isDuplicatePrSubmitError } from './submitFlow';
 import { initTelemetry, disposeTelemetry, telemetryEvent, telemetryError, classifyError } from './telemetry';
 import { discoverRepositoryTemplateFiles } from './templateDiscovery';
 
@@ -54,6 +55,73 @@ function shortenGeneratedTitle(title: string, maxLength = 32): string {
         return normalized;
     }
     return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+function isDraftSelection(draft: boolean): string {
+    return draft ? 'Draft PR' : 'PR';
+}
+
+async function openPrComparison(
+    existingPr: ExistingPrSummary,
+    title: string,
+    body: string,
+    owner: string,
+    repo: string,
+    headBranch: string,
+    baseBranch: string,
+    draft: boolean,
+): Promise<void> {
+    const existingDoc = await vscode.workspace.openTextDocument({
+        content: buildPrSnapshotDocument('Existing PR', existingPr, { owner, repo, head: headBranch, base: baseBranch }),
+        language: 'markdown',
+    });
+    const localDoc = await vscode.workspace.openTextDocument({
+        content: buildPrSnapshotDocument(`Local ${isDraftSelection(draft)}`, {
+            number: existingPr.number,
+            url: existingPr.url,
+            title,
+            body,
+            draft,
+        }, { owner, repo, head: headBranch, base: baseBranch }),
+        language: 'markdown',
+    });
+    await vscode.commands.executeCommand('vscode.diff', existingDoc.uri, localDoc.uri, `PR Forge: Compare PR #${existingPr.number}`);
+}
+
+async function promptExistingPrAction(
+    existingPr: ExistingPrSummary,
+    title: string,
+    body: string,
+    owner: string,
+    repo: string,
+    headBranch: string,
+    baseBranch: string,
+    draft: boolean,
+): Promise<'update' | 'compare' | 'open' | 'cancel'> {
+    const updateLabel = `Update PR #${existingPr.number}`;
+    const compareLabel = `Compare PR #${existingPr.number}`;
+    const openLabel = 'Open in Browser';
+    const choice = await vscode.window.showInformationMessage(
+        `PR #${existingPr.number} already exists for "${headBranch}". Replace it with the new draft, compare first, or open the current PR?`,
+        { modal: true },
+        updateLabel,
+        compareLabel,
+        openLabel,
+        'Cancel',
+    );
+
+    if (choice === updateLabel) {
+        return 'update';
+    }
+    if (choice === compareLabel) {
+        await openPrComparison(existingPr, title, body, owner, repo, headBranch, baseBranch, draft);
+        return 'compare';
+    }
+    if (choice === openLabel) {
+        await vscode.env.openExternal(vscode.Uri.parse(existingPr.url));
+        return 'open';
+    }
+    return 'cancel';
 }
 
 function readGeneratedArtifacts(workspaceFolder: vscode.WorkspaceFolder, config: PrForgeConfig): GeneratedArtifacts {
@@ -742,7 +810,7 @@ async function setApiKey(): Promise<void> {
 }
 
 async function submitDraftPr(): Promise<void> {
-    await submitPrInternal(true);
+    await submitPrInternalV2(true);
 }
 
 async function openInbox(): Promise<void> {
@@ -826,7 +894,7 @@ async function openInbox(): Promise<void> {
     );
 }
 
-async function resolveRemoteContext(workspaceFolder: vscode.WorkspaceFolder, silent = false): Promise<NonNullable<ReturnType<typeof parseRemote>> | null> {
+async function resolveRemoteContext(workspaceFolder: vscode.WorkspaceFolder, silent = false): Promise<(NonNullable<ReturnType<typeof parseRemote>> & { token: string }) | null> {
     let remoteUrl: string;
     try {
         remoteUrl = execSync('git remote get-url origin', { cwd: workspaceFolder.uri.fsPath }).toString().trim();
@@ -867,7 +935,7 @@ async function resolveRemoteContext(workspaceFolder: vscode.WorkspaceFolder, sil
         }
         return null;
     }
-    return remote;
+    return { ...remote, token };
 }
 
 async function browseReviewThreads(
@@ -1157,6 +1225,37 @@ async function openReviewThreads(): Promise<void> {
     return;
 }
 
+async function openExistingPr(): Promise<void> {
+    const workspaceFolder = await resolveTargetProjectFolder();
+    if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+    if (!(await ensureConfig(workspaceFolder))) return;
+
+    const remote = await resolveRemoteContext(workspaceFolder);
+    if (!remote) { return; }
+
+    const headBranch = getCurrentBranch(workspaceFolder.uri.fsPath);
+    if (!headBranch) {
+        vscode.window.showErrorMessage('PR Forge: Could not determine the current branch.');
+        return;
+    }
+    if (headBranch === (readConfig(workspaceFolder)?.baseBranch ?? '')) {
+        vscode.window.showInformationMessage('PR Forge: You are on the base branch. Switch to a feature branch first.');
+        return;
+    }
+
+    await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Looking up existing PR...', cancellable: false },
+        async () => {
+            const existingPr = await remote.provider.findOpenPr({ owner: remote.owner, repo: remote.repo, head: headBranch, token: remote.token });
+            if (!existingPr) {
+                vscode.window.showInformationMessage(`PR Forge: No open PR or merge request found for "${headBranch}".`);
+                return;
+            }
+            await vscode.env.openExternal(vscode.Uri.parse(existingPr.url));
+        }
+    );
+}
+
 async function openIssueFlow(): Promise<void> {
     const workspaceFolder = await resolveTargetProjectFolder();
     if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
@@ -1222,10 +1321,10 @@ async function openIssueFlow(): Promise<void> {
 }
 
 async function submitPr(): Promise<void> {
-    await submitPrInternal(false);
+    await submitPrInternalV2(false);
 }
 
-async function submitPrInternal(draft: boolean): Promise<void> {
+async function _submitPrInternal(draft: boolean): Promise<void> {
     const workspaceFolder = await resolveTargetProjectFolder();
     if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
     const config = await ensureConfig(workspaceFolder);
@@ -1417,6 +1516,235 @@ async function submitPrInternal(draft: boolean): Promise<void> {
     }
 
     // Show success after the spinner has closed
+    if (prUrl && prNumber) {
+        provider.updateState({
+            submittedPrNumber: prNumber,
+            submittedPrUrl: prUrl,
+            submittedPrDraft: draft,
+            submittedPrTimestamp: new Date().toLocaleTimeString(),
+        });
+        void refreshReadiness(true);
+        const actionLabel = existingPr ? `PR #${prNumber} updated!` : `${draft ? 'Draft PR' : 'PR'} #${prNumber} created!`;
+        const open = await vscode.window.showInformationMessage(actionLabel, 'Open in Browser');
+        if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(prUrl)); }
+    }
+}
+
+async function submitPrInternalV2(draft: boolean): Promise<void> {
+    const workspaceFolder = await resolveTargetProjectFolder();
+    if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+    const config = readConfig(workspaceFolder);
+    if (!config) { vscode.window.showErrorMessage('PR Forge: No config found.'); return; }
+
+    const titlePath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, 'PR_TITLE.txt');
+    const bodyPath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, 'PR_BODY.md');
+    if (!fs.existsSync(titlePath) || !fs.existsSync(bodyPath)) {
+        vscode.window.showErrorMessage('PR Forge: Generate a PR Body first before submitting.');
+        return;
+    }
+
+    let remoteUrl: string;
+    try {
+        remoteUrl = execSync('git remote get-url origin', { cwd: workspaceFolder.uri.fsPath }).toString().trim();
+    } catch {
+        vscode.window.showErrorMessage('PR Forge: Could not get git remote URL. Is "origin" set?');
+        return;
+    }
+
+    const isGitLabRemote = /gitlab\.com/i.test(remoteUrl);
+    let token: string | undefined;
+    if (isGitLabRemote) {
+        token = (await getApiKey(extensionContext, 'gitlab')) ?? undefined;
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitLab token. Use "Set API Key" → "GitLab (SCM token)" to store your personal access token (api scope required).');
+            return;
+        }
+    } else {
+        try {
+            const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+            token = session.accessToken;
+        } catch {
+            token = process.env.GITHUB_TOKEN;
+        }
+        if (!token) {
+            vscode.window.showErrorMessage('PR Forge: No GitHub token. Sign in to GitHub in VS Code or set GITHUB_TOKEN env var.');
+            return;
+        }
+    }
+
+    const remote = parseRemote(remoteUrl, token);
+    if (!remote) {
+        vscode.window.showErrorMessage(`PR Forge: Unsupported remote host. Only GitHub and GitLab are supported. Remote: ${remoteUrl}`);
+        return;
+    }
+
+    let headBranch: string;
+    try {
+        headBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: workspaceFolder.uri.fsPath }).toString().trim();
+    } catch {
+        vscode.window.showErrorMessage('PR Forge: Could not determine current branch.');
+        return;
+    }
+
+    if (headBranch === 'HEAD') {
+        vscode.window.showErrorMessage('PR Forge: You are in detached HEAD state. Check out a branch first.');
+        return;
+    }
+    if (headBranch === config.baseBranch) {
+        vscode.window.showErrorMessage(`PR Forge: You are on the base branch (${config.baseBranch}). Switch to a feature branch first.`);
+        return;
+    }
+
+    let branchPushed = false;
+    try {
+        const tracking = execSync(`git rev-parse --abbrev-ref "${headBranch}@{u}"`, { cwd: workspaceFolder.uri.fsPath }).toString().trim();
+        branchPushed = tracking.length > 0;
+    } catch { /* no upstream set */ }
+
+    if (!branchPushed) {
+        const pushNow = await vscode.window.showWarningMessage(
+            `Branch "${headBranch}" has not been pushed to origin. Push it now?`,
+            'Push', 'Cancel'
+        );
+        if (pushNow !== 'Push') { return; }
+        try {
+            execSync(`git push -u origin "${headBranch}"`, { cwd: workspaceFolder.uri.fsPath });
+            log(`Pushed branch ${headBranch} to origin.`);
+        } catch (pushErr: unknown) {
+            const msg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+            vscode.window.showErrorMessage(`PR Forge: Failed to push branch â€” ${msg}`);
+            return;
+        }
+    }
+
+    const title = fs.readFileSync(titlePath, 'utf-8').trim();
+    const body = fs.readFileSync(bodyPath, 'utf-8');
+    const { owner, repo, provider: scm } = remote;
+
+    let existingPr: ExistingPrSummary | null = null;
+    try {
+        existingPr = await scm.findOpenPr({ owner, repo, head: headBranch, token: token! });
+    } catch { /* ignore lookup failure and proceed */ }
+
+    let prUrl: string | undefined;
+    let prNumber: number | undefined;
+
+    if (existingPr) {
+        const action = await promptExistingPrAction(existingPr, title, body, owner, repo, headBranch, config.baseBranch, draft);
+        if (action !== 'update') {
+            return;
+        }
+
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `PR Forge: Updating PR #${existingPr.number}...`, cancellable: false },
+            async () => {
+                try {
+                    const result = await scm.updatePr({
+                        owner,
+                        repo,
+                        number: existingPr!.number,
+                        title,
+                        body,
+                        head: headBranch,
+                        base: config.baseBranch,
+                        token: token!,
+                        labels: config.prLabels ?? [],
+                        reviewers: config.prReviewers ?? [],
+                        assignees: config.prAssignees ?? [],
+                        milestone: config.prMilestone ?? '',
+                    });
+                    prUrl = result.url;
+                    prNumber = result.number;
+                    log(`PR #${prNumber} updated: ${prUrl}`);
+                    telemetryEvent('submit.pr', { draft: String(draft), mode: 'update', outcome: 'success' });
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    log(`PR update failed: ${msg}`);
+                    telemetryError('submit.pr', { draft: String(draft), mode: 'update', outcome: 'error', errorKind: classifyError(err) });
+                    vscode.window.showErrorMessage(`PR Forge: PR update failed â€” ${msg}`);
+                }
+            }
+        );
+    } else {
+        const submitLabel = draft ? 'Submit Draft' : 'Submit';
+        const draftLabel = draft ? ' (Draft)' : '';
+        const confirm = await vscode.window.showInformationMessage(
+            `Submit${draftLabel} PR: "${title}"\n${owner}/${repo}  •  ${headBranch} → ${config.baseBranch}`,
+            { modal: true },
+            submitLabel
+        );
+        if (confirm !== submitLabel) { return; }
+
+        const progressTitle = draft ? 'PR Forge: Submitting draft PR...' : 'PR Forge: Submitting PR...';
+        const prType = draft ? 'Draft PR' : 'PR';
+
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: progressTitle, cancellable: false },
+            async () => {
+                try {
+                    const result = await scm.createPr({
+                        owner,
+                        repo,
+                        title,
+                        body,
+                        head: headBranch,
+                        base: config.baseBranch,
+                        token: token!,
+                        draft,
+                        labels: config.prLabels ?? [],
+                        reviewers: config.prReviewers ?? [],
+                        assignees: config.prAssignees ?? [],
+                        milestone: config.prMilestone ?? '',
+                    });
+                    prUrl = result.url;
+                    prNumber = result.number;
+                    log(`${prType} created: ${result.url}`);
+                    telemetryEvent('submit.pr', { draft: String(draft), mode: 'create', outcome: 'success' });
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    log(`PR submit failed: ${msg}`);
+                    telemetryError('submit.pr', { draft: String(draft), mode: 'create', outcome: 'error', errorKind: classifyError(err) });
+
+                    if (isDuplicatePrSubmitError(msg)) {
+                        try {
+                            const duplicatePr = await scm.findOpenPr({ owner, repo, head: headBranch, token: token! });
+                            if (duplicatePr) {
+                                const duplicateAction = await promptExistingPrAction(duplicatePr, title, body, owner, repo, headBranch, config.baseBranch, draft);
+                                if (duplicateAction === 'update') {
+                                    const result = await scm.updatePr({
+                                        owner,
+                                        repo,
+                                        number: duplicatePr.number,
+                                        title,
+                                        body,
+                                        head: headBranch,
+                                        base: config.baseBranch,
+                                        token: token!,
+                                        labels: config.prLabels ?? [],
+                                        reviewers: config.prReviewers ?? [],
+                                        assignees: config.prAssignees ?? [],
+                                        milestone: config.prMilestone ?? '',
+                                    });
+                                    prUrl = result.url;
+                                    prNumber = result.number;
+                                    existingPr = duplicatePr;
+                                    log(`PR #${prNumber} updated after duplicate create response: ${prUrl}`);
+                                    telemetryEvent('submit.pr', { draft: String(draft), mode: 'update', outcome: 'success' });
+                                }
+                                return;
+                            }
+                        } catch (retryErr: unknown) {
+                            const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+                            log(`Duplicate PR recovery failed: ${retryMsg}`);
+                        }
+                    }
+
+                    vscode.window.showErrorMessage(`PR Forge: PR submit failed â€” ${msg}`);
+                }
+            }
+        );
+    }
+
     if (prUrl && prNumber) {
         provider.updateState({
             submittedPrNumber: prNumber,
@@ -1778,6 +2106,9 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         onOpenReviewThreads: () => {
             void openReviewThreads();
+        },
+        onOpenExistingPr: () => {
+            void openExistingPr();
         },
         onCopyPreviewTitle: (title: string) => {
             vscode.env.clipboard.writeText(title);
