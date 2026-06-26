@@ -42,18 +42,24 @@ Most tools either *review* your PR or *manage* it. PR Forge does both: it author
 ## Features
 
 - **Generate PR Body** — AI-written title and description from your `base..HEAD` diff, commits, and optional test output
+- **No-AI fallback** — when no API key is configured, Generate PR Body produces a structured template (branch name, diffstat, changed-files table, commits table) you can fill in manually; no key required
 - **Generate PR Review** — structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation
 - **Post Inline Review** — post a proper GitHub review with comments anchored to specific diff lines, plus committable one-line suggestions (same shape as Copilot's review, with your own model)
 - **Post Review as PR Comment** — alternative: post the full review as a single comment on the submitted PR
-- **Submit PR / Submit as Draft** — creates a GitHub pull request without leaving VS Code; draft PRs are supported
-- **Update existing PR** — detects an open PR for your branch and offers to update it instead of creating a duplicate
+- **Submit PR / Submit as Draft** — creates a GitHub pull request (or GitLab merge request) without leaving VS Code; draft PRs are supported
+- **Smart Submit/Update button** — automatically detects an open PR or MR for your branch and relabels itself "Update PR #N" / "Update MR #N" so you never accidentally create a duplicate
+- **Open Inbox** — list open pull requests (GitHub) or merge requests (GitLab) from the sidebar; select any to open in the browser or jump into reviewing its threads
+- **Close PR / Close MR** — close the open PR or MR for the current branch directly from the sidebar, with a confirmation dialog
 - **Regenerate with feedback** — type an instruction in the Refine panel to revise the draft without re-running tests
+- **Repository template awareness** — PR body generation picks up GitHub and GitLab template files and folds that guidance into both AI and no-AI drafts
+- **Submission metadata** — attach labels, assignees, reviewers, and milestone values to GitHub PRs and GitLab MRs when configured
 - **File walkthrough** — opt-in `## Changes` per-file table appended to the PR body
 - **Commit summaries** — opt-in `## Commits` table with one AI-written line per commit
 - **Re-review on push** — opt-in: when new commits land on a branch with a submitted PR, PR Forge offers to re-run the review (accept or dismiss — no silent token spend)
 - **Model picker** — lists models from your provider's API; selection saved to `.pr-forge.json` automatically
 - **Cancellable generation** — cancel at any point from the sidebar or progress notification
 - **Multi-provider** — DeepSeek, OpenAI, Anthropic, OpenRouter, Groq, Ollama
+- **GitLab support** — create, update, comment, and post inline reviews on GitLab MRs; button labels and terminology switch between "PR" and "MR" based on your remote
 - **API keys in SecretStorage** — stored securely in VS Code; never written to project files
 - **Project type detection** — seeds sensible defaults for .NET, Node, React, and Python projects
 
@@ -93,7 +99,7 @@ ext install masonkent.pr-forge
 **Install from VSIX** (no build required):
 
 ```bash
-code --install-extension extensions/pr-forge/pr-forge-1.5.2.vsix
+code --install-extension extensions/pr-forge/pr-forge-1.5.3.vsix
 ```
 
 Or via the Extensions panel: `⋯ menu → Install from VSIX…`
@@ -129,13 +135,13 @@ Or via the Extensions panel: `⋯ menu → Install from VSIX…`
 
 ---
 
-## GitHub submission
+## GitHub and GitLab submission
 
-PR Forge uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) to create or update pull requests. If a PR already exists for your branch, it offers to update the title and body instead of creating a duplicate.
+PR Forge uses your VS Code GitHub sign-in (falling back to `GITHUB_TOKEN`) for GitHub PRs, and a GitLab personal access token (api scope) for GitLab MRs. If a PR or MR already exists for your branch, the Submit button automatically switches to "Update PR #N" / "Update MR #N".
 
-**GitHub only.** Non-GitHub remotes are rejected with a clear message. GitLab Merge Request support is planned.
+After a PR or MR is submitted, use **Post Review to PR** for a single comment or **Post Inline Review** for line-anchored comments with committable suggestions — no Copilot, no extra cost.
 
-After a PR is submitted, use **Post Review to PR** for a single comment or **Post Inline Review** for line-anchored comments with committable suggestions — both use your existing GitHub token, no Copilot, no extra cost.
+**Not yet supported:** Bitbucket, Azure DevOps, GitHub Enterprise with a custom host.
 
 ---
 
@@ -143,14 +149,15 @@ After a PR is submitted, use **Post Review to PR** for a single comment or **Pos
 
 **Current limitations:**
 
-- GitHub only — no GitLab, Bitbucket, or Azure DevOps submission yet
+- Bitbucket and Azure DevOps submission not yet supported
+- GitHub Enterprise / custom host not yet supported
 - Multi-line committable suggestion ranges not yet supported (single-line only)
 - Single-workspace only
 
 **Planned:**
 
-- GitLab Merge Requests
 - GitHub Enterprise / custom host support
+- Bitbucket and Azure DevOps submission
 - Multi-line committable suggestions
 - Better onboarding and demo examples
 
