@@ -21,11 +21,13 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 - **Seed from Issue** - browse open issues, then create a branch or seed a draft PR body from the selected issue
 - **Submit PR / Submit Draft PR** - create or update a pull request or merge request without leaving VS Code
 - **Open Existing PR** - open the already-open PR or merge request for the current branch directly from the sidebar
+- **Review thread actions** - browse review threads, jump to file anchors, reply, and resolve/reopen where the host API supports it
 - **Metadata automation** - carry labels, assignees, reviewers, and milestone values into GitHub and GitLab submissions when configured
 - **Regenerate with feedback** - type an instruction in the Refine panel and hit Enter to revise the draft without re-running tests
 - **File walkthrough** - opt-in `## Changes` per-file table appended to the PR body
 - **Commit summaries** - opt-in `## Commits` table with one AI-written line per commit
 - **Re-review on push** - opt-in: when new commits land on a branch with a submitted PR, PR Forge offers to re-run the review
+- **Settings dropdown** - keeps the model picker and generation toggles tucked under one expandable section below API key and above branch
 - **Model picker** - lists available models from your provider's API; selection saved to config automatically
 - **Cancellable generation** - cancel at any point from the sidebar or progress notification
 - **API keys in SecretStorage** - stored securely in VS Code, never in project files
@@ -38,8 +40,9 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 
 1. Click the **PR Forge** icon in the Activity Bar to open the sidebar.
 2. Click **Set API Key** - pick your provider and paste its key.
-3. Click **Init Config** to create `.pr-forge.json` in your project root.
-4. Switch to a feature branch and click **Generate PR Body** or **Generate PR Review**.
+3. Open the **Settings** dropdown if you want to change the model or generation toggles.
+4. Click **Init Config** to create `.pr-forge.json` in your project root.
+5. Switch to a feature branch and click **Generate PR Body** or **Generate PR Review**.
 
 > The model dropdown, Run Tests toggle, and other options are controlled directly from the sidebar. Generation streams live into the sidebar as the model writes.
 
@@ -49,7 +52,7 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 
 Download the release artifact from the repo root and install it with VS Code:
 
-`pr-forge-1.5.0.vsix`
+`pr-forge-1.5.1.vsix`
 
 Use the VS Code command palette and run `Extensions: Install from VSIX...`.
 
@@ -84,6 +87,8 @@ PR Forge supports **GitHub**, **GitHub Enterprise**, **GitLab**, and **GitLab se
 Repository PR/MR templates are discovered automatically from common locations such as `.github/PULL_REQUEST_TEMPLATE`, `docs/PULL_REQUEST_TEMPLATE`, and `.gitlab/merge_request_templates`, and the generated body includes that guidance when present.
 
 After submitting, **Post Review to PR** posts the full review as a single comment, or use **Post Inline Review** to post line-anchored comments directly on the diff (GitHub) or as GitLab discussions when the API has enough diff metadata, with a note fallback when it does not.
+
+**Review threads** - the sidebar can browse review threads, open the underlying file anchor, open the remote discussion, reply to a thread, and resolve or reopen a thread when the host API supports that action. GitHub and GitLab do not expose identical review-thread behavior, so PR Forge shows only the actions the host can actually perform.
 
 ---
 

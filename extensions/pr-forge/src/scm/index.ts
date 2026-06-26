@@ -78,6 +78,14 @@ export interface ReviewThread {
     comments: ReviewThreadComment[];
 }
 
+export interface ReviewThreadReplyResult {
+    url: string;
+}
+
+export interface ReviewThreadStateResult {
+    state: 'resolved' | 'unresolved';
+}
+
 export interface ScmProvider {
     /** Human-readable name for error messages. */
     name: string;
@@ -93,6 +101,12 @@ export interface ScmProvider {
     getReadiness(payload: { owner: string; repo: string; number: number }): Promise<ReadinessSummary>;
     /** Fetch review threads/comments for a specific PR/MR. */
     listReviewThreads(payload: { owner: string; repo: string; number: number }): Promise<ReviewThread[]>;
+    /** Reply to an existing review thread/discussion. */
+    replyToReviewThread(payload: { owner: string; repo: string; number: number; threadId: string; body: string }): Promise<ReviewThreadReplyResult>;
+    /** Mark a review thread/discussion as resolved. */
+    resolveReviewThread(payload: { owner: string; repo: string; number: number; threadId: string }): Promise<ReviewThreadStateResult>;
+    /** Mark a review thread/discussion as unresolved. */
+    reopenReviewThread(payload: { owner: string; repo: string; number: number; threadId: string }): Promise<ReviewThreadStateResult>;
     /** Update title and body of an existing PR. */
     updatePr(payload: PrPayload & { number: number }): Promise<PrResult>;
     /** Post a plain comment on an existing PR/issue. Returns the comment URL. */
@@ -129,6 +143,9 @@ export interface ParsedRemote {
 }
 
 function inferGitHubBaseUrl(host: string): string {
+    if (host.toLowerCase() === 'github.com') {
+        return 'https://api.github.com';
+    }
     return `https://${host}/api/v3`;
 }
 

@@ -1,6 +1,6 @@
 import * as https from 'https';
 import * as http from 'http';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread, ExistingPrSummary } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread, ExistingPrSummary, ReviewThreadReplyResult, ReviewThreadStateResult } from './index';
 
 function glRequest(
     baseUrl: string,
@@ -430,6 +430,52 @@ export class GitLabScmProvider implements ScmProvider {
                     })),
             }];
         });
+    }
+
+    async replyToReviewThread(payload: { owner: string; repo: string; number: number; threadId: string; body: string }): Promise<ReviewThreadReplyResult> {
+        const pid = projectId(payload.owner, payload.repo);
+        const { statusCode, json } = await glRequest(
+            this.baseUrl,
+            this.token,
+            `/projects/${pid}/merge_requests/${payload.number}/discussions/${encodeURIComponent(payload.threadId)}/notes`,
+            'POST',
+            JSON.stringify({ body: payload.body }),
+        );
+        const note = json as { web_url?: string; message?: string };
+        if ((statusCode === 200 || statusCode === 201) && note.web_url) {
+            return { url: note.web_url };
+        }
+        throw new Error((note.message ?? `GitLab API error ${statusCode}`) + glHint(statusCode));
+    }
+
+    async resolveReviewThread(payload: { owner: string; repo: string; number: number; threadId: string }): Promise<ReviewThreadStateResult> {
+        return this.setReviewThreadState(payload, true);
+    }
+
+    async reopenReviewThread(payload: { owner: string; repo: string; number: number; threadId: string }): Promise<ReviewThreadStateResult> {
+        return this.setReviewThreadState(payload, false);
+    }
+
+    async setReviewThreadResolved(payload: { owner: string; repo: string; number: number; threadId: string; resolved: boolean }): Promise<ReviewThreadStateResult> {
+        return payload.resolved ? this.resolveReviewThread(payload) : this.reopenReviewThread(payload);
+    }
+
+    private async setReviewThreadState(
+        payload: { owner: string; repo: string; number: number; threadId: string },
+        resolved: boolean,
+    ): Promise<ReviewThreadStateResult> {
+        const pid = projectId(payload.owner, payload.repo);
+        const { statusCode, json } = await glRequest(
+            this.baseUrl,
+            this.token,
+            `/projects/${pid}/merge_requests/${payload.number}/discussions/${encodeURIComponent(payload.threadId)}?resolved=${resolved ? 'true' : 'false'}`,
+            'PUT',
+        );
+        const discussion = json as { message?: string };
+        if (statusCode === 200) {
+            return { state: resolved ? 'resolved' : 'unresolved' };
+        }
+        throw new Error((discussion.message ?? `GitLab API error ${statusCode}`) + glHint(statusCode));
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {

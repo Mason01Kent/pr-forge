@@ -367,12 +367,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="card-row"><span class="label">Config</span><span class="badge warn" id="config-badge">Not found</span></div>
     <div class="card-row"><span class="label">Provider</span><span class="value" id="provider-name">-</span></div>
     <div class="card-row"><span class="label">API Key</span><span class="badge warn" id="key-badge">Not set</span></div>
-    <div class="card-row" id="model-row" style="display:none"><span class="label">Model</span><select class="select-model" id="model-select"></select></div>
-    <div class="card-row" id="run-tests-row" style="display:none"><span class="label">Run tests</span><label class="toggle"><input type="checkbox" id="chk-run-tests" checked><span class="toggle-label" id="run-tests-label">On</span></label></div>
-    <div class="card-row" id="commit-row" style="display:none"><span class="label">Recent commits</span><label class="toggle"><input type="checkbox" id="chk-commits"><span class="toggle-label" id="commits-label">Off</span></label></div>
-    <div class="card-row" id="commit-summary-row" style="display:none"><span class="label">Commit summaries</span><label class="toggle"><input type="checkbox" id="chk-commit-summaries"><span class="toggle-label" id="commit-summaries-label">Off</span></label></div>
-    <div class="card-row" id="file-walkthrough-row" style="display:none"><span class="label">File walkthrough</span><label class="toggle"><input type="checkbox" id="chk-file-walkthrough"><span class="toggle-label" id="file-walkthrough-label">Off</span></label></div>
-    <div class="card-row" id="rereview-row" style="display:none"><span class="label">Re-review on push</span><label class="toggle"><input type="checkbox" id="chk-rereview"><span class="toggle-label" id="rereview-label">Off</span></label></div>
+    <details class="settings-group" id="settings-group">
+      <summary class="settings-summary">
+        <span class="settings-summary-label">Settings</span>
+        <span class="settings-summary-hint">Model and generation toggles</span>
+      </summary>
+      <div class="settings-body">
+        <div class="card-row" id="model-row" style="display:none"><span class="label">Model</span><select class="select-model" id="model-select"></select></div>
+        <div class="card-row" id="run-tests-row" style="display:none"><span class="label">Run tests</span><label class="toggle"><input type="checkbox" id="chk-run-tests" checked><span class="toggle-label" id="run-tests-label">On</span></label></div>
+        <div class="card-row" id="commit-row" style="display:none"><span class="label">Recent commits</span><label class="toggle"><input type="checkbox" id="chk-commits"><span class="toggle-label" id="commits-label">Off</span></label></div>
+        <div class="card-row" id="commit-summary-row" style="display:none"><span class="label">Commit summaries</span><label class="toggle"><input type="checkbox" id="chk-commit-summaries"><span class="toggle-label" id="commit-summaries-label">Off</span></label></div>
+        <div class="card-row" id="file-walkthrough-row" style="display:none"><span class="label">File walkthrough</span><label class="toggle"><input type="checkbox" id="chk-file-walkthrough"><span class="toggle-label" id="file-walkthrough-label">Off</span></label></div>
+        <div class="card-row" id="rereview-row" style="display:none"><span class="label">Re-review on push</span><label class="toggle"><input type="checkbox" id="chk-rereview"><span class="toggle-label" id="rereview-label">Off</span></label></div>
+      </div>
+    </details>
     <div class="card-row" id="branch-row" style="display:none"><span class="label">Branch</span><span class="value" id="branch-name"></span></div>
     <div class="card-row" id="last-run-row" style="display:none"><span class="label">Last run</span><span class="value" id="last-run-info"></span></div>
     <div class="card-row" id="generated-title-row" style="display:none"><span class="label">Title</span><span class="value gh-pr-title-bar-text" id="generated-title-text"></span></div>
@@ -604,6 +612,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     keyBadge.textContent = noAuth ? 'Not needed' : (state.providerKeySet ? 'Set ✓' : 'Not set');
     keyBadge.className = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
     el('no-key-banner').style.display = (!noAuth && !state.providerKeySet && state.configExists) ? '' : 'none';
+    el('settings-group').style.display = state.configExists ? '' : 'none';
 
     if (state.availableModels && state.availableModels.length > 0) {
       const sel = el('model-select');
@@ -633,6 +642,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('rereview-label').textContent = state.reReviewOnPush === true ? 'On' : 'Off';
       el('rereview-row').style.display = '';
     } else {
+      el('model-row').style.display = 'none';
       el('run-tests-row').style.display = 'none';
       el('commit-row').style.display = 'none';
       el('commit-summary-row').style.display = 'none';
