@@ -9,12 +9,13 @@
 PR Forge reads your git diff and commits, generates a pull request title, description, and review, then submits or updates the PR on GitHub or GitLab - all from a sidebar panel.
 
 No Copilot subscription. No per-seat fee. Bring your own API key and model.
+If you skip the API key, PR body generation falls back to a git-driven template instead of AI output.
 
 ---
 
 ## What it does
 
-- **Generate PR Body** - AI-written title and description from your `base..HEAD` diff, commits, optional test output, and repository PR/MR templates when present
+- **Generate PR Body** - AI-written title and description from your `base..HEAD` diff, commits, optional test output, and repository PR/MR templates when present; if no AI key is configured, PR Forge falls back to a git-driven template body
 - **Generate PR Review** - structured review with blocking issues, suggestions, security concerns, test coverage, and a recommendation
 - **Post Inline Review** - post line-anchored inline review comments directly on the diff (GitHub review API, or GitLab discussion notes with a plain-note fallback)
 - **Post Review as PR/MR Comment** - alternative: post the full review as a single comment on the submitted pull request or merge request
@@ -47,6 +48,8 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 4. Click **Init Config** to create `.pr-forge.json` in your project root.
 5. Switch to a feature branch and click **Generate PR Body** or **Generate PR Review**.
 
+> No API key configured? `Generate PR Body` still works and writes a template-based body from git history, file changes, and test output.
+
 > The model dropdown, Run Tests toggle, and other options are controlled directly from the sidebar. Generation streams live into the sidebar as the model writes.
 
 ---
@@ -55,7 +58,7 @@ No Copilot subscription. No per-seat fee. Bring your own API key and model.
 
 Download the release artifact from the repo root and install it with VS Code:
 
-`pr-forge-1.5.6.vsix`
+`pr-forge-1.5.7.vsix`
 
 Use the VS Code command palette and run `Extensions: Install from VSIX...`.
 
