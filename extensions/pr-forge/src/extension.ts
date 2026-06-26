@@ -475,7 +475,7 @@ async function clearPrOutput(): Promise<void> {
     const cfg = readConfig(wf);
     if (cfg) {
         const outputDir = path.join(wf.uri.fsPath, cfg.outputDirectory);
-        for (const f of ['PR_TITLE.txt', 'PR_BODY.md', 'PR_REVIEW.md']) {
+        for (const f of ['PR_TITLE.txt', 'PR_BODY.md', 'PR_REVIEW.md', 'PR_BODY.state.json']) {
             const p = path.join(outputDir, f);
             if (fs.existsSync(p)) { fs.unlinkSync(p); }
         }
@@ -648,6 +648,13 @@ async function generatePrBody(): Promise<void> {
                 }
             );
             if (!noAiKey) { logUsage(result.usage); }
+            if (result.historyNotice) {
+                if (result.historyMode === 'incremental' || (result.historyMode === 'full' && result.historyNotice.includes('Falling back'))) {
+                    vscode.window.showWarningMessage(`PR Forge: ${result.historyNotice}`);
+                } else {
+                    vscode.window.showInformationMessage(`PR Forge: ${result.historyNotice}`);
+                }
+            }
             telemetryEvent('generate.prBody', { provider: noAiKey ? 'none' : config.provider, model: noAiKey ? 'template' : config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
             const previewContent: PreviewContent = { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch };
             lastBodyContent = previewContent;

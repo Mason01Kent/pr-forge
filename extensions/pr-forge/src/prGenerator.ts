@@ -38,11 +38,14 @@ export interface PrGeneratorResult {
   outputDir: string;
   branch: string;
   headSha: string;
+  historyMode?: 'full' | 'incremental' | 'reused';
+  historyNotice?: string;
   usage: UsageStats;
 }
 
 // Generated/noisy files processed last so source files always fit first.
 const NOISY_PATTERNS = /\.(lock|min\.js|min\.css|map|snap|Designer\.cs|g\.cs)$|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Migrations\/.*\.cs$/i;
+const BODY_STATE_FILE = 'PR_BODY.state.json';
 
 // Session-level cache: keyed by headSha, stores diffContext and testOutput.
 interface DiffCache {
@@ -54,6 +57,13 @@ interface DiffCache {
   fileTable?: string;
 }
 let _diffCache: DiffCache | null = null;
+
+interface BodyGenerationState {
+  branch: string;
+  baseBranch: string;
+  headSha: string;
+  updatedAt: string;
+}
 
 export function clearDiffCache(): void { _diffCache = null; }
 
@@ -75,6 +85,45 @@ function stripGeneratedTables(body: string): string {
   return body.slice(0, Math.min(...indices)).replace(/\n+$/, '');
 }
 
+function generationStatePath(outputDir: string): string {
+  return path.join(outputDir, BODY_STATE_FILE);
+}
+
+function readBodyGenerationState(outputDir: string): BodyGenerationState | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(generationStatePath(outputDir), 'utf-8')) as Partial<BodyGenerationState>;
+    if (
+      typeof parsed.branch === 'string' &&
+      typeof parsed.baseBranch === 'string' &&
+      typeof parsed.headSha === 'string' &&
+      typeof parsed.updatedAt === 'string'
+    ) {
+      return {
+        branch: parsed.branch,
+        baseBranch: parsed.baseBranch,
+        headSha: parsed.headSha,
+        updatedAt: parsed.updatedAt,
+      };
+    }
+  } catch {
+    /* no prior state */
+  }
+  return null;
+}
+
+function writeBodyGenerationState(outputDir: string, state: BodyGenerationState): void {
+  fs.writeFileSync(generationStatePath(outputDir), `${JSON.stringify(state, null, 2)}\n`, 'utf-8');
+}
+
+function isAncestorCommit(cwd: string, olderSha: string, newerSha: string): boolean {
+  try {
+    execSync(`git merge-base --is-ancestor ${olderSha} ${newerSha}`, { cwd, stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Parse the model's JSON array of {sha, summary} into a sha->summary map (defensive). */
 function parseCommitSummaries(text: string): Record<string, string> {
   try {
@@ -94,14 +143,16 @@ function parseCommitSummaries(text: string): Record<string, string> {
 }
 
 /**
- * Build an AI-summarised "## Commits" table for base..HEAD in a single LLM call.
+ * Build an AI-summarised "## Commits" table for a ref range in a single LLM call.
  * Returns '' when there are no commits. Plain short SHAs auto-link on GitHub.
  */
 async function buildCommitTable(
   opts: PrGeneratorOptions,
   cwd: string,
+  fromRef: string,
+  toRef: string,
 ): Promise<string> {
-  const raw = safeExec(`git log ${opts.baseBranch}..HEAD --pretty=format:%h%x1f%s`, cwd).trim();
+  const raw = safeExec(`git log ${fromRef}..${toRef} --pretty=format:%h%x1f%s`, cwd).trim();
   if (!raw) { return ''; }
 
   let commits = raw.split('\n').map(line => {
@@ -147,8 +198,8 @@ ${context}`,
 }
 
 /** Build an AI-summarised "## Changes" per-file walkthrough table in a single LLM call. */
-async function buildFileWalkthroughTable(opts: PrGeneratorOptions, cwd: string): Promise<string> {
-  let fileDiffs = getFileDiffs(cwd, opts.baseBranch).filter(f => f.diff.trim());
+async function buildFileWalkthroughTable(opts: PrGeneratorOptions, cwd: string, fromRef: string, toRef: string): Promise<string> {
+  let fileDiffs = getFileDiffsBetween(cwd, fromRef, toRef).filter(f => f.diff.trim());
   if (fileDiffs.length === 0) { return ''; }
 
   let truncationNote = '';
@@ -193,14 +244,14 @@ ${context}`,
 }
 
 /** Append the enabled generated tables (file walkthrough, then commits) to the body. */
-async function appendGeneratedTables(opts: PrGeneratorOptions, cwd: string, headSha: string, body: string): Promise<string> {
+async function appendGeneratedTables(opts: PrGeneratorOptions, cwd: string, fromRef: string, toRef: string, headSha: string, body: string): Promise<string> {
   const cached = _diffCache && _diffCache.headSha === headSha ? _diffCache : null;
   let result = stripGeneratedTables(body).replace(/\n+$/, '');
 
   if (opts.includeFileWalkthrough) {
     let table = cached?.fileTable ?? '';
     if (!table) {
-      table = await buildFileWalkthroughTable(opts, cwd);
+      table = await buildFileWalkthroughTable(opts, cwd, fromRef, toRef);
       if (cached) { cached.fileTable = table; }
     } else { opts.onLog('Using cached file walkthrough.'); }
     if (table) { result += `\n\n${table}`; }
@@ -209,7 +260,7 @@ async function appendGeneratedTables(opts: PrGeneratorOptions, cwd: string, head
   if (opts.includeCommitSummaries) {
     let table = cached?.commitTable ?? '';
     if (!table) {
-      table = await buildCommitTable(opts, cwd);
+      table = await buildCommitTable(opts, cwd, fromRef, toRef);
       if (cached) { cached.commitTable = table; }
     } else { opts.onLog('Using cached commit summaries.'); }
     if (table) { result += `\n\n${table}`; }
@@ -241,6 +292,37 @@ export function getFileDiffs(cwd: string, baseBranch: string): { file: string; d
     file,
     diff: safeExec(`git diff ${baseBranch}..HEAD -- "${file}"`, cwd),
   }));
+}
+
+function getFileDiffsBetween(cwd: string, fromRef: string, toRef: string): { file: string; diff: string }[] {
+  const nameStatus = safeExec(`git diff --name-status ${fromRef}..${toRef}`, cwd);
+  const allFiles = nameStatus.split('\n').filter(Boolean).map(l => l.split('\t').pop() ?? '');
+  const ordered = [
+    ...allFiles.filter(f => !NOISY_PATTERNS.test(f)),
+    ...allFiles.filter(f => NOISY_PATTERNS.test(f)),
+  ];
+  return ordered.map(file => ({
+    file,
+    diff: safeExec(`git diff ${fromRef}..${toRef} -- "${file}"`, cwd),
+  }));
+}
+
+async function _buildRangeContext(
+  cwd: string,
+  fromRef: string,
+  toRef: string,
+  llm: LLMClientOptions,
+  projectName: string,
+  onLog: (msg: string) => void,
+  signal?: AbortSignal,
+): Promise<{ commits: string; diffStat: string; files: string; diffContext: string }> {
+  const commits = safeExec(`git log ${fromRef}..${toRef} --oneline`, cwd);
+  const diffStat = safeExec(`git diff --stat ${fromRef}..${toRef}`, cwd);
+  const files = safeExec(`git diff --name-status ${fromRef}..${toRef}`, cwd);
+  const fileDiffs = getFileDiffsBetween(cwd, fromRef, toRef);
+  onLog(`Files changed: ${fileDiffs.length}`);
+  const diffContext = await buildDiffContext(fileDiffs, llm, projectName, onLog, signal);
+  return { commits, diffStat, files, diffContext };
 }
 
 function runTestCommand(opts: PrGeneratorOptions): Promise<string> {
@@ -489,24 +571,68 @@ export async function generatePrBodyTemplate(opts: PrGeneratorOptions): Promise<
   body += `\n\n## Tests / verification\n\n\`\`\`\n${testOutput.trim()}\n\`\`\``;
 
   // Append generated tables if enabled
-  body = await appendGeneratedTables(opts, cwd, headSha, body);
+  body = await appendGeneratedTables(opts, cwd, opts.baseBranch, 'HEAD', headSha, body);
 
-  const outputDir = path.join(cwd, opts.outputDirectory);
-  fs.mkdirSync(outputDir, { recursive: true });
-  fs.writeFileSync(path.join(outputDir, 'PR_TITLE.txt'), title, 'utf-8');
-  fs.writeFileSync(path.join(outputDir, 'PR_BODY.md'), body, 'utf-8');
+  const templateOutputDir = path.join(cwd, opts.outputDirectory);
+  fs.mkdirSync(templateOutputDir, { recursive: true });
+  fs.writeFileSync(path.join(templateOutputDir, 'PR_TITLE.txt'), title, 'utf-8');
+  fs.writeFileSync(path.join(templateOutputDir, 'PR_BODY.md'), body, 'utf-8');
+  writeBodyGenerationState(templateOutputDir, { branch, baseBranch: opts.baseBranch, headSha, updatedAt: new Date().toISOString() });
   opts.onLog('Template PR body written (no AI).');
 
-  return { title, body, outputDir, branch, headSha, usage: { inputTokens: 0, outputTokens: 0 } };
+  return { title, body, outputDir: templateOutputDir, branch, headSha, usage: { inputTokens: 0, outputTokens: 0 } };
 }
 
 export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorResult> {
   const cwd = opts.workspacePath;
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
   const headSha = safeExec('git rev-parse HEAD', cwd).trim();
-  const commits = opts.includeRecentCommits ? safeExec(`git log ${opts.baseBranch}..HEAD --oneline`, cwd) : '';
-  const diffStat = safeExec(`git diff --stat ${opts.baseBranch}..HEAD`, cwd);
-  const files    = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
+  const generateOutputDir = path.join(opts.workspacePath, opts.outputDirectory);
+  const previousState = readBodyGenerationState(generateOutputDir);
+  const previousBodyPath = path.join(generateOutputDir, 'PR_BODY.md');
+  const previousTitlePath = path.join(generateOutputDir, 'PR_TITLE.txt');
+  const previousBody = fs.existsSync(previousBodyPath) ? fs.readFileSync(previousBodyPath, 'utf-8') : '';
+  const previousTitle = fs.existsSync(previousTitlePath) ? fs.readFileSync(previousTitlePath, 'utf-8').trim() : '';
+  const sameBranch = previousState?.branch === branch && previousState.baseBranch === opts.baseBranch;
+  const sameHead = previousState?.headSha === headSha;
+  let historyMode: 'full' | 'incremental' | 'reused' = 'full';
+  let historyBaseRef = opts.baseBranch;
+  let historyNotice: string | undefined;
+  let _previousDraft = '';
+
+  if (previousState && sameBranch) {
+    if (sameHead && previousBody && previousTitle) {
+      historyMode = 'reused';
+      historyNotice = 'No new commits since the last PR body generation; reusing the existing body.';
+    } else if (isAncestorCommit(cwd, previousState.headSha, headSha)) {
+      historyMode = 'incremental';
+      historyBaseRef = previousState.headSha;
+      _previousDraft = previousBody;
+      const newCommitCount = safeExec(`git rev-list --count ${previousState.headSha}..${headSha}`, cwd).trim();
+      historyNotice = `Incremental PR body mode using ${newCommitCount || 'new'} new commit(s) since ${previousState.headSha.slice(0, 7)}. It will miss rebases or rewritten commits, so fall back to a full refresh if history changed.`;
+    } else {
+      historyNotice = `Previous PR body history no longer connects to ${headSha.slice(0, 7)}. Falling back to a full refresh because incremental mode cannot see rebased or rewritten commits.`;
+    }
+  }
+
+  if (historyMode === 'reused' && previousBody && previousTitle) {
+    opts.onLog(`Branch: ${branch}`);
+    opts.onLog('Reusing previous PR body for unchanged HEAD.');
+    return {
+      title: previousTitle,
+      body: previousBody,
+      outputDir: generateOutputDir,
+      branch,
+      headSha,
+      historyMode,
+      historyNotice,
+      usage: { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 },
+    };
+  }
+
+  const commits = opts.includeRecentCommits ? safeExec(`git log ${historyBaseRef}..HEAD --oneline`, cwd) : '';
+  const diffStat = safeExec(`git diff --stat ${historyBaseRef}..HEAD`, cwd);
+  const files = safeExec(`git diff --name-status ${historyBaseRef}..HEAD`, cwd);
 
   opts.onLog(`Branch: ${branch}`);
   if (opts.includeRecentCommits) {
@@ -524,7 +650,7 @@ export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorR
     testOutput = _diffCache.testOutput;
   } else {
     // Collect per-file diffs — source files first, generated files last
-    const fileDiffs = getFileDiffs(cwd, opts.baseBranch);
+    const fileDiffs = getFileDiffs(cwd, historyBaseRef);
     opts.onLog(`Files changed: ${fileDiffs.length}`);
 
     diffContext = await buildDiffContext(fileDiffs, opts.llm, opts.projectName, opts.onLog, opts.signal);
@@ -639,7 +765,7 @@ Write in markdown. Be specific about what changed and why.`,
   opts.onLog('PR body generated.');
 
   // Optional: AI-summarised file walkthrough + commits tables appended to the body
-  body = await appendGeneratedTables(opts, cwd, headSha, body);
+  body = await appendGeneratedTables(opts, cwd, historyBaseRef, 'HEAD', headSha, body);
 
   // Generate PR review (optional) — also streamed
   let review: string | undefined;
@@ -677,16 +803,16 @@ ${testOutput}`,
   }
 
   // Write output files
-  const outputDir = path.join(opts.workspacePath, opts.outputDirectory);
-  fs.mkdirSync(outputDir, { recursive: true });
-  fs.writeFileSync(path.join(outputDir, 'PR_TITLE.txt'), cleanTitle, 'utf-8');
-  fs.writeFileSync(path.join(outputDir, 'PR_BODY.md'), body, 'utf-8');
+  fs.mkdirSync(generateOutputDir, { recursive: true });
+  fs.writeFileSync(path.join(generateOutputDir, 'PR_TITLE.txt'), cleanTitle, 'utf-8');
+  fs.writeFileSync(path.join(generateOutputDir, 'PR_BODY.md'), body, 'utf-8');
+  writeBodyGenerationState(generateOutputDir, { branch, baseBranch: opts.baseBranch, headSha, updatedAt: new Date().toISOString() });
   if (review) {
-    fs.writeFileSync(path.join(outputDir, 'PR_REVIEW.md'), review, 'utf-8');
+    fs.writeFileSync(path.join(generateOutputDir, 'PR_REVIEW.md'), review, 'utf-8');
   }
-  opts.onLog(`Output written to ${outputDir}`);
+  opts.onLog(`Output written to ${generateOutputDir}`);
 
-  return { title: cleanTitle, body, review, outputDir, branch, headSha, usage: totalUsage };
+  return { title: cleanTitle, body, review, outputDir: generateOutputDir, branch, headSha, historyMode, historyNotice, usage: totalUsage };
 }
 
 /**
@@ -705,9 +831,10 @@ export async function regeneratePr(
   const cwd = opts.workspacePath;
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
   const headSha = safeExec('git rev-parse HEAD', cwd).trim();
-  const commits = opts.includeRecentCommits ? safeExec(`git log ${opts.baseBranch}..HEAD --oneline`, cwd) : '';
-  const diffStat = safeExec(`git diff --stat ${opts.baseBranch}..HEAD`, cwd);
-  const files    = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd);
+  const historyBaseRef = opts.baseBranch;
+  const commits = opts.includeRecentCommits ? safeExec(`git log ${historyBaseRef}..HEAD --oneline`, cwd) : '';
+  const diffStat = safeExec(`git diff --stat ${historyBaseRef}..HEAD`, cwd);
+  const files    = safeExec(`git diff --name-status ${historyBaseRef}..HEAD`, cwd);
 
   const { diffContext, testOutput } = _diffCache;
   const templateGuidance = loadTemplateGuidance(cwd, opts.templateFiles);
@@ -773,7 +900,7 @@ Write in markdown. Be specific about what changed and why.`;
   }, opts.signal);
 
   // Re-append the generated tables (reuses the cached ones for this headSha)
-  body = await appendGeneratedTables(opts, cwd, headSha, body);
+  body = await appendGeneratedTables(opts, cwd, historyBaseRef, 'HEAD', headSha, body);
 
   // Re-generate title from the new body
   const title = await chatComplete(opts.llm, [
@@ -794,11 +921,12 @@ Respond with ONLY the title text. No quotes, no markdown, no explanation.`,
   const cleanTitle = title.replace(/^["']|["']$/g, '').trim();
   opts.onLog(`Regenerated. Title: ${cleanTitle}`);
 
-  const outputDir = path.join(opts.workspacePath, opts.outputDirectory);
-  fs.mkdirSync(outputDir, { recursive: true });
-  fs.writeFileSync(path.join(outputDir, 'PR_TITLE.txt'), cleanTitle, 'utf-8');
-  fs.writeFileSync(path.join(outputDir, 'PR_BODY.md'), body, 'utf-8');
-  opts.onLog(`Output written to ${outputDir}`);
+  const regenOutputDir = path.join(opts.workspacePath, opts.outputDirectory);
+  fs.mkdirSync(regenOutputDir, { recursive: true });
+  fs.writeFileSync(path.join(regenOutputDir, 'PR_TITLE.txt'), cleanTitle, 'utf-8');
+  fs.writeFileSync(path.join(regenOutputDir, 'PR_BODY.md'), body, 'utf-8');
+  writeBodyGenerationState(regenOutputDir, { branch, baseBranch: opts.baseBranch, headSha, updatedAt: new Date().toISOString() });
+  opts.onLog(`Output written to ${regenOutputDir}`);
 
-  return { title: cleanTitle, body, outputDir, branch, headSha, usage: regenUsage };
+  return { title: cleanTitle, body, outputDir: regenOutputDir, branch, headSha, historyMode: 'full', usage: regenUsage };
 }
