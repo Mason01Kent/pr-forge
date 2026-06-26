@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as https from 'https';
-import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread, ExistingPrSummary } from './index';
+import { ScmProvider, PrPayload, PrResult, ReviewComment, InboxItem, IssueItem, ReadinessSummary, ReviewThread, ExistingPrSummary, ReviewThreadReplyResult, ReviewThreadStateResult } from './index';
 
 function ghRequest(
     baseUrl: string,
@@ -120,6 +120,16 @@ function ghGraphqlRequest(
         req.write(body);
         req.end();
     });
+}
+
+async function ghGraphqlMutation<T>(
+    baseUrl: string,
+    token: string,
+    query: string,
+    variables: Record<string, unknown>,
+): Promise<{ statusCode: number; json: T }> {
+    const result = await ghGraphqlRequest(baseUrl, token, query, variables);
+    return { statusCode: result.statusCode, json: result.json as T };
 }
 
 function firstLine(body: string): string {
@@ -551,6 +561,70 @@ query($owner: String!, $repo: String!, $number: Int!) {
                 })),
             }];
         });
+    }
+
+    async replyToReviewThread(payload: { owner: string; repo: string; number: number; threadId: string; body: string }): Promise<ReviewThreadReplyResult> {
+        const query = `
+mutation($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) {
+    comment { url }
+  }
+}`;
+        const { statusCode, json } = await ghGraphqlMutation<{
+            data?: {
+                addPullRequestReviewThreadReply?: {
+                    comment?: { url?: string };
+                };
+            };
+            errors?: Array<{ message?: string }>;
+        }>(this.baseUrl, this.token, query, { threadId: payload.threadId, body: payload.body });
+        if (statusCode !== 200 || typeof json !== 'object' || json === null) {
+            throw new Error(`GitHub GraphQL API error ${statusCode}${ghHint(statusCode)}`);
+        }
+        if (Array.isArray(json.errors) && json.errors.length > 0) {
+            throw new Error(`GitHub GraphQL API error: ${json.errors.map(err => err.message ?? 'unknown GraphQL error').join('; ')}`);
+        }
+        const url = json.data?.addPullRequestReviewThreadReply?.comment?.url;
+        if (!url) {
+            throw new Error('GitHub GraphQL API did not return a reply URL.');
+        }
+        return { url };
+    }
+
+    async resolveReviewThread(payload: { owner: string; repo: string; number: number; threadId: string }): Promise<ReviewThreadStateResult> {
+        return this.setReviewThreadState(payload, true);
+    }
+
+    async reopenReviewThread(payload: { owner: string; repo: string; number: number; threadId: string }): Promise<ReviewThreadStateResult> {
+        return this.setReviewThreadState(payload, false);
+    }
+
+    async setReviewThreadResolved(payload: { owner: string; repo: string; number: number; threadId: string; resolved: boolean }): Promise<ReviewThreadStateResult> {
+        return payload.resolved ? this.resolveReviewThread(payload) : this.reopenReviewThread(payload);
+    }
+
+    private async setReviewThreadState(
+        payload: { owner: string; repo: string; number: number; threadId: string },
+        resolved: boolean,
+    ): Promise<ReviewThreadStateResult> {
+        const mutationName = resolved ? 'resolveReviewThread' : 'unresolveReviewThread';
+        const query = `
+mutation($threadId: ID!) {
+  ${mutationName}(input: { threadId: $threadId }) {
+    thread { id }
+  }
+}`;
+        const { statusCode, json } = await ghGraphqlMutation<{
+            data?: Record<string, unknown>;
+            errors?: Array<{ message?: string }>;
+        }>(this.baseUrl, this.token, query, { threadId: payload.threadId });
+        if (statusCode !== 200 || typeof json !== 'object' || json === null) {
+            throw new Error(`GitHub GraphQL API error ${statusCode}${ghHint(statusCode)}`);
+        }
+        if (Array.isArray(json.errors) && json.errors.length > 0) {
+            throw new Error(`GitHub GraphQL API error: ${json.errors.map(err => err.message ?? 'unknown GraphQL error').join('; ')}`);
+        }
+        return { state: resolved ? 'resolved' : 'unresolved' };
     }
 
     async updatePr(payload: PrPayload & { number: number }): Promise<PrResult> {

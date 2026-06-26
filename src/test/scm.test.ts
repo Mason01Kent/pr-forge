@@ -8,6 +8,7 @@ describe('parseRemote', () => {
     assert.strictEqual(result?.owner, 'owner');
     assert.strictEqual(result?.repo, 'repo');
     assert.strictEqual(result?.provider.name, 'GitHub');
+    assert.ok(((result?.provider as unknown as { baseUrl?: string })?.baseUrl ?? '').includes('api.github.com'));
   });
 
   it('parses GitHub SSH remotes', () => {
@@ -55,7 +56,7 @@ describe('parseRemote', () => {
     const result = parseRemote('https://github.com/owner/repo.git', 'token');
     assert.ok(result);
     assert.strictEqual(result!.provider.name, 'GitHub');
-    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'updatePr', 'postPrComment', 'createReview'] as const) {
+    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'listReviewThreads', 'replyToReviewThread', 'resolveReviewThread', 'reopenReviewThread', 'updatePr', 'postPrComment', 'createReview'] as const) {
       assert.strictEqual(typeof result!.provider[method], 'function', `missing ${method}`);
     }
   });
@@ -81,7 +82,7 @@ describe('parseRemote', () => {
   it('GitLabScmProvider exposes the full SCM interface', () => {
     const provider = new GitLabScmProvider('tok');
     assert.strictEqual(provider.name, 'GitLab');
-    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'updatePr', 'postPrComment', 'createReview'] as const) {
+    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'listReviewThreads', 'replyToReviewThread', 'resolveReviewThread', 'reopenReviewThread', 'updatePr', 'postPrComment', 'createReview'] as const) {
       assert.strictEqual(typeof provider[method], 'function', `missing ${method}`);
     }
   });
@@ -98,6 +99,35 @@ function mockGlServer(statusCode: number, responseBody: unknown): Promise<{ url:
         server.listen(0, '127.0.0.1', () => {
             const addr = server.address() as { port: number };
             resolve({ url: `http://127.0.0.1:${addr.port}`, close: () => server.close() });
+        });
+    });
+}
+
+function mockApiServer(
+    handler: (req: { method: string; path: string; body: string }) => { statusCode: number; body: unknown },
+): Promise<{ url: string; close: () => void; requests: Array<{ method: string; path: string; body: string }> }> {
+    return new Promise((resolve) => {
+        const requests: Array<{ method: string; path: string; body: string }> = [];
+        const server = http.createServer((req, res) => {
+            const chunks: Buffer[] = [];
+            req.on('data', (chunk: Buffer) => chunks.push(chunk));
+            req.on('end', () => {
+                const body = Buffer.concat(chunks).toString('utf-8');
+                const record = {
+                    method: req.method ?? 'GET',
+                    path: req.url ?? '/',
+                    body,
+                };
+                requests.push(record);
+                const response = handler(record);
+                const responseBody = JSON.stringify(response.body);
+                res.writeHead(response.statusCode, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(responseBody).toString() });
+                res.end(responseBody);
+            });
+        });
+        server.listen(0, '127.0.0.1', () => {
+            const addr = server.address() as { port: number };
+            resolve({ url: `http://127.0.0.1:${addr.port}`, close: () => server.close(), requests });
         });
     });
 }
@@ -173,6 +203,61 @@ describe('GitLabScmProvider', () => {
             const result = await provider.postPrComment({ owner: 'g', repo: 'r', number: 5, body: 'LGTM' });
             assert.ok(result.url.includes('99'));
         } finally { mock.close(); }
+    });
+
+    it('replyToReviewThread, resolveReviewThread, and reopenReviewThread work for GitHub', async () => {
+        const server = await mockApiServer((req) => {
+            const payload = req.body ? JSON.parse(req.body) as { query?: string } : {};
+            if (req.method === 'POST' && req.path === '/graphql' && payload.query?.includes('addPullRequestReviewThreadReply')) {
+                return { statusCode: 200, body: { data: { addPullRequestReviewThreadReply: { comment: { url: 'https://github.com/o/r/pull/4#discussion_r9' } } } } };
+            }
+            if (req.method === 'POST' && req.path === '/graphql' && payload.query?.includes('resolveReviewThread')) {
+                return { statusCode: 200, body: { data: { resolveReviewThread: { thread: { id: 'thread-1' } } } } };
+            }
+            if (req.method === 'POST' && req.path === '/graphql' && payload.query?.includes('unresolveReviewThread')) {
+                return { statusCode: 200, body: { data: { unresolveReviewThread: { thread: { id: 'thread-1' } } } } };
+            }
+            return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const reply = await provider.replyToReviewThread({ owner: 'g', repo: 'r', number: 4, threadId: 'thread-1', body: 'Reply body' });
+            assert.strictEqual(reply.url, 'https://github.com/o/r/pull/4#discussion_r9');
+            assert.deepStrictEqual(await provider.resolveReviewThread({ owner: 'g', repo: 'r', number: 4, threadId: 'thread-1' }), { state: 'resolved' });
+            assert.deepStrictEqual(await provider.reopenReviewThread({ owner: 'g', repo: 'r', number: 4, threadId: 'thread-1' }), { state: 'unresolved' });
+            assert.ok(server.requests.some(request => request.body.includes('addPullRequestReviewThreadReply')));
+            assert.ok(server.requests.some(request => request.body.includes('resolveReviewThread')));
+            assert.ok(server.requests.some(request => request.body.includes('unresolveReviewThread')));
+        } finally {
+            server.close();
+        }
+    });
+
+    it('replyToReviewThread, resolveReviewThread, and reopenReviewThread work for GitLab', async () => {
+        const server = await mockApiServer((req) => {
+            if (req.method === 'POST' && req.path === '/projects/g%2Fr/merge_requests/9/discussions/disc-1/notes') {
+                return { statusCode: 201, body: { id: 77, web_url: 'https://gitlab.com/o/r/-/merge_requests/9#note_77' } };
+            }
+            if (req.method === 'PUT' && req.path === '/projects/g%2Fr/merge_requests/9/discussions/disc-1?resolved=true') {
+                return { statusCode: 200, body: { id: 'disc-1', resolved: true } };
+            }
+            if (req.method === 'PUT' && req.path === '/projects/g%2Fr/merge_requests/9/discussions/disc-1?resolved=false') {
+                return { statusCode: 200, body: { id: 'disc-1', resolved: false } };
+            }
+            return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const reply = await provider.replyToReviewThread({ owner: 'g', repo: 'r', number: 9, threadId: 'disc-1', body: 'Reply body' });
+            assert.strictEqual(reply.url, 'https://gitlab.com/o/r/-/merge_requests/9#note_77');
+            assert.deepStrictEqual(await provider.resolveReviewThread({ owner: 'g', repo: 'r', number: 9, threadId: 'disc-1' }), { state: 'resolved' });
+            assert.deepStrictEqual(await provider.reopenReviewThread({ owner: 'g', repo: 'r', number: 9, threadId: 'disc-1' }), { state: 'unresolved' });
+            assert.ok(server.requests.some(request => request.path.includes('/discussions/disc-1/notes')));
+            assert.ok(server.requests.some(request => request.path.includes('resolved=true')));
+            assert.ok(server.requests.some(request => request.path.includes('resolved=false')));
+        } finally {
+            server.close();
+        }
     });
 
     it('createPr throws with 401 hint on bad credentials', async () => {

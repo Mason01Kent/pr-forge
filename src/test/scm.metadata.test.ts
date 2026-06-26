@@ -229,6 +229,38 @@ describe('SCM metadata automation', () => {
         }
     });
 
+    it('replies to and resolves GitHub review threads', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'POST /graphql':
+                    if (req.body.includes('addPullRequestReviewThreadReply')) {
+                        return { statusCode: 200, body: { data: { addPullRequestReviewThreadReply: { comment: { url: 'https://github.com/o/r/pull/4#discussion_r99' } } } } };
+                    }
+                    if (req.body.includes('resolveReviewThread')) {
+                        return { statusCode: 200, body: { data: { resolveReviewThread: { thread: { id: 'thread-1' } } } } };
+                    }
+                    if (req.body.includes('unresolveReviewThread')) {
+                        return { statusCode: 200, body: { data: { unresolveReviewThread: { thread: { id: 'thread-1' } } } } };
+                    }
+                    return { statusCode: 404, body: { message: `unexpected graphql ${req.body}` } };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const reply = await provider.replyToReviewThread({ owner: 'o', repo: 'r', number: 4, threadId: 'thread-1', body: 'Reply body' });
+            assert.strictEqual(reply.url, 'https://github.com/o/r/pull/4#discussion_r99');
+            await provider.resolveReviewThread({ owner: 'o', repo: 'r', number: 4, threadId: 'thread-1' });
+            await provider.reopenReviewThread({ owner: 'o', repo: 'r', number: 4, threadId: 'thread-1' });
+            assert.ok(server.requests.some(request => request.body.includes('addPullRequestReviewThreadReply')));
+            assert.ok(server.requests.some(request => request.body.includes('resolveReviewThread')));
+            assert.ok(server.requests.some(request => request.body.includes('unresolveReviewThread')));
+        } finally {
+            server.close();
+        }
+    });
+
     it('attaches GitHub labels, assignees, reviewers, and milestone metadata', async () => {
         const server = await mockServer((req) => {
             switch (`${req.method} ${req.path}`) {
@@ -493,6 +525,30 @@ describe('SCM metadata automation', () => {
                     },
                 ],
             }]);
+        } finally {
+            server.close();
+        }
+    });
+
+    it('replies to and resolves GitLab review threads', async () => {
+        const server = await mockServer((req) => {
+            switch (`${req.method} ${req.path}`) {
+                case 'POST /projects/o%2Fr/merge_requests/9/discussions/thread-1/notes':
+                    return { statusCode: 201, body: { web_url: 'https://gitlab.com/o/r/-/merge_requests/9#note_99' } };
+                case 'PUT /projects/o%2Fr/merge_requests/9/discussions/thread-1?resolved=true':
+                case 'PUT /projects/o%2Fr/merge_requests/9/discussions/thread-1?resolved=false':
+                    return { statusCode: 200, body: { id: 'thread-1', resolved: true } };
+                default:
+                    return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+            }
+        });
+        try {
+            const provider = new GitLabScmProvider('tok', server.url);
+            const reply = await provider.replyToReviewThread({ owner: 'o', repo: 'r', number: 9, threadId: 'thread-1', body: 'Reply body' });
+            assert.strictEqual(reply.url, 'https://gitlab.com/o/r/-/merge_requests/9#note_99');
+            await provider.resolveReviewThread({ owner: 'o', repo: 'r', number: 9, threadId: 'thread-1' });
+            await provider.reopenReviewThread({ owner: 'o', repo: 'r', number: 9, threadId: 'thread-1' });
+            assert.strictEqual(server.requests[0].path, '/projects/o%2Fr/merge_requests/9/discussions/thread-1/notes');
         } finally {
             server.close();
         }

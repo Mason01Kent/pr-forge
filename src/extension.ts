@@ -856,39 +856,45 @@ async function openInbox(): Promise<void> {
     await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Loading inbox...', cancellable: false },
         async () => {
-            const items = await remote.provider.listOpenPrs({ owner: remote.owner, repo: remote.repo });
-            if (items.length === 0) {
-                vscode.window.showInformationMessage('PR Forge: No open PRs or merge requests found.');
-                return;
-            }
+            try {
+                const items = await remote.provider.listOpenPrs({ owner: remote.owner, repo: remote.repo });
+                if (items.length === 0) {
+                    vscode.window.showInformationMessage('PR Forge: No open PRs or merge requests found.');
+                    return;
+                }
 
-            const pick = await vscode.window.showQuickPick(items.map(item => ({
-                label: `#${item.number} ${item.title}`,
-                description: item.draft ? 'Draft' : item.state ?? 'open',
-                detail: [item.author ? `by ${item.author}` : '', item.updatedAt ? `updated ${item.updatedAt}` : '', item.labels?.length ? item.labels.join(', ') : ''].filter(Boolean).join(' · '),
-                number: item.number,
-                title: item.title,
-                url: item.url,
-            })), {
-                title: `PR Forge Inbox - ${remote.owner}/${remote.repo}`,
-                placeHolder: 'Select a pull request or merge request to open',
-            });
-            if (pick) {
-                const action = await vscode.window.showQuickPick([
-                    { label: 'Open in Browser', description: pick.url, actionType: 'browser' as const },
-                    { label: 'Browse Review Threads', description: `PR #${pick.number}`, actionType: 'threads' as const },
-                ], {
-                    title: `PR #${pick.number} ${pick.title}`,
-                    placeHolder: 'Choose what to do with this pull request or merge request',
+                const pick = await vscode.window.showQuickPick(items.map(item => ({
+                    label: `#${item.number} ${item.title}`,
+                    description: item.draft ? 'Draft' : item.state ?? 'open',
+                    detail: [item.author ? `by ${item.author}` : '', item.updatedAt ? `updated ${item.updatedAt}` : '', item.labels?.length ? item.labels.join(', ') : ''].filter(Boolean).join(' · '),
+                    number: item.number,
+                    title: item.title,
+                    url: item.url,
+                })), {
+                    title: `PR Forge Inbox - ${remote.owner}/${remote.repo}`,
+                    placeHolder: 'Select a pull request or merge request to open',
                 });
-                if (!action) {
-                    return;
+                if (pick) {
+                    const action = await vscode.window.showQuickPick([
+                        { label: 'Open in Browser', description: pick.url, actionType: 'browser' as const },
+                        { label: 'Browse Review Threads', description: `PR #${pick.number}`, actionType: 'threads' as const },
+                    ], {
+                        title: `PR #${pick.number} ${pick.title}`,
+                        placeHolder: 'Choose what to do with this pull request or merge request',
+                    });
+                    if (!action) {
+                        return;
+                    }
+                    if (action.actionType === 'threads') {
+                        await browseReviewThreads(workspaceFolder, remote, pick.number, `PR Forge Review Threads - ${remote.owner}/${remote.repo}#${pick.number}`);
+                        return;
+                    }
+                    await vscode.env.openExternal(vscode.Uri.parse(pick.url));
                 }
-                if (action.actionType === 'threads') {
-                    await browseReviewThreads(workspaceFolder, remote, pick.number, `PR Forge Review Threads - ${remote.owner}/${remote.repo}#${pick.number}`);
-                    return;
-                }
-                await vscode.env.openExternal(vscode.Uri.parse(pick.url));
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                log(`Inbox load failed: ${msg}`);
+                vscode.window.showErrorMessage(`PR Forge: Could not load inbox — ${msg}`);
             }
         }
     );
@@ -945,7 +951,7 @@ async function browseReviewThreads(
     titleHint?: string,
 ): Promise<void> {
     type ThreadPickItem = vscode.QuickPickItem & { thread: ReviewThread };
-    type ThreadActionKind = 'openFile' | 'openDiscussion' | 'browseComments';
+    type ThreadActionKind = 'openFile' | 'openDiscussion' | 'browseComments' | 'reply' | 'toggleResolve';
     type ThreadActionItem = vscode.QuickPickItem & { actionType: ThreadActionKind };
     type ThreadCommentPickItem = vscode.QuickPickItem & { comment: ReviewThread['comments'][number] };
 
@@ -955,9 +961,41 @@ async function browseReviewThreads(
         return;
     }
 
-    const pick = await vscode.window.showQuickPick<ThreadPickItem>(threads.map(thread => ({
+    const latestActivity = (thread: ReviewThread): string | undefined => thread.comments
+        .map(comment => comment.createdAt)
+        .filter((value): value is string => !!value)
+        .sort()
+        .at(-1);
+
+    const filterPick = await vscode.window.showQuickPick([
+        { label: 'All threads', description: `${threads.length} total`, value: 'all' as const },
+        { label: 'Unresolved only', description: `${threads.filter(thread => thread.state !== 'resolved').length} actionable`, value: 'unresolved' as const },
+    ], {
+        title: titleHint ?? `PR Forge Review Threads - ${remote.owner}/${remote.repo}#${prNumber}`,
+        placeHolder: 'Choose which review threads to show',
+    });
+    if (!filterPick) {
+        return;
+    }
+
+    const filteredThreads = filterPick.value === 'unresolved'
+        ? threads.filter(thread => thread.state !== 'resolved')
+        : [...threads];
+
+    const sortedThreads = filteredThreads.sort((a, b) => {
+        const aActivity = latestActivity(a) ?? '';
+        const bActivity = latestActivity(b) ?? '';
+        return bActivity.localeCompare(aActivity);
+    });
+
+    const pick = await vscode.window.showQuickPick<ThreadPickItem>(sortedThreads.map(thread => ({
         label: thread.title,
-        description: [thread.state, thread.actionable ? 'actionable' : 'read-only'].filter(Boolean).join(' · '),
+        description: [
+            thread.state,
+            thread.actionable ? 'actionable' : 'read-only',
+            thread.comments[0]?.author ? `by ${thread.comments[0].author}` : '',
+            latestActivity(thread) ? `updated ${latestActivity(thread)}` : '',
+        ].filter(Boolean).join(' · '),
         detail: [
             thread.comments.length ? `${thread.comments.length} comment(s)` : '',
             thread.comments[0]?.body ? thread.comments[0].body : '',
@@ -976,6 +1014,12 @@ async function browseReviewThreads(
     if (thread.path && typeof thread.line === 'number') {
         actions.push({ label: 'Open File', description: `${thread.path}:${thread.line}`, actionType: 'openFile' });
     }
+    actions.push({ label: 'Reply', description: 'Add a reply to this thread', actionType: 'reply' });
+    actions.push({
+        label: thread.state === 'resolved' ? 'Reopen Thread' : 'Resolve Thread',
+        description: thread.state === 'resolved' ? 'Mark this thread unresolved again' : 'Mark this thread resolved',
+        actionType: 'toggleResolve',
+    });
     if (thread.comments.length > 0) {
         actions.push({ label: 'Browse Comments', description: `${thread.comments.length} comment(s)`, actionType: 'browseComments' });
     }
@@ -1033,6 +1077,60 @@ async function browseReviewThreads(
                 preview: false,
                 selection: new vscode.Range(Math.max(0, thread.line - 1), 0, Math.max(0, thread.line - 1), 0),
             });
+            return;
+        }
+    }
+
+    if (action.actionType === 'reply') {
+        const reply = await vscode.window.showInputBox({
+            title: thread.title,
+            prompt: 'Write a reply for this review thread',
+            ignoreFocusOut: true,
+            placeHolder: 'Type a reply and press Enter',
+        });
+        if (!reply || !reply.trim()) {
+            return;
+        }
+        try {
+            const result = await remote.provider.replyToReviewThread({
+                owner: remote.owner,
+                repo: remote.repo,
+                number: prNumber,
+                threadId: thread.id,
+                body: reply.trim(),
+            });
+            await vscode.env.openExternal(vscode.Uri.parse(result.url));
+            return;
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            vscode.window.showErrorMessage(`PR Forge: Could not reply to thread — ${msg}`);
+            return;
+        }
+    }
+
+    if (action.actionType === 'toggleResolve') {
+        const resolved = thread.state !== 'resolved';
+        try {
+            if (resolved) {
+                await remote.provider.resolveReviewThread({
+                    owner: remote.owner,
+                    repo: remote.repo,
+                    number: prNumber,
+                    threadId: thread.id,
+                });
+            } else {
+                await remote.provider.reopenReviewThread({
+                    owner: remote.owner,
+                    repo: remote.repo,
+                    number: prNumber,
+                    threadId: thread.id,
+                });
+            }
+            vscode.window.showInformationMessage(resolved ? 'PR Forge: Thread resolved.' : 'PR Forge: Thread reopened.');
+            return;
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            vscode.window.showErrorMessage(`PR Forge: Could not update thread state — ${msg}`);
             return;
         }
     }
@@ -1267,55 +1365,61 @@ async function openIssueFlow(): Promise<void> {
     await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Loading issues...', cancellable: false },
         async () => {
-            const issues = await remote.provider.listOpenIssues({ owner: remote.owner, repo: remote.repo });
-            if (issues.length === 0) {
-                vscode.window.showInformationMessage('PR Forge: No open issues found.');
-                return;
-            }
+            try {
+                const issues = await remote.provider.listOpenIssues({ owner: remote.owner, repo: remote.repo });
+                if (issues.length === 0) {
+                    vscode.window.showInformationMessage('PR Forge: No open issues found.');
+                    return;
+                }
 
-            const pick = await vscode.window.showQuickPick(issues.map(issue => ({
-                label: `#${issue.number} ${issue.title}`,
-                description: issue.state ?? 'open',
-                detail: [issue.author ? `by ${issue.author}` : '', issue.updatedAt ? `updated ${issue.updatedAt}` : '', issue.labels?.length ? issue.labels.join(', ') : ''].filter(Boolean).join(' · '),
-                issue,
-            })), {
-                title: `PR Forge Issues - ${remote.owner}/${remote.repo}`,
-                placeHolder: 'Select an issue to seed a branch or PR',
-            });
-            if (!pick) {
-                return;
-            }
+                const pick = await vscode.window.showQuickPick(issues.map(issue => ({
+                    label: `#${issue.number} ${issue.title}`,
+                    description: issue.state ?? 'open',
+                    detail: [issue.author ? `by ${issue.author}` : '', issue.updatedAt ? `updated ${issue.updatedAt}` : '', issue.labels?.length ? issue.labels.join(', ') : ''].filter(Boolean).join(' · '),
+                    issue,
+                })), {
+                    title: `PR Forge Issues - ${remote.owner}/${remote.repo}`,
+                    placeHolder: 'Select an issue to seed a branch or PR',
+                });
+                if (!pick) {
+                    return;
+                }
 
-            const action = await vscode.window.showQuickPick([
-                { label: 'Create Branch & Seed Draft PR', description: 'Create a branch and write PR files from this issue', actionType: 'branchAndDraft' as const },
-                { label: 'Create Branch Only', description: 'Just create a local branch from this issue', actionType: 'branchOnly' as const },
-                { label: 'Seed Draft PR Only', description: 'Write PR files from this issue on the current branch', actionType: 'draftOnly' as const },
-                { label: 'Open Issue in Browser', description: pick.issue.url, actionType: 'openIssue' as const },
-            ] as Array<vscode.QuickPickItem & { actionType: 'branchAndDraft' | 'branchOnly' | 'draftOnly' | 'openIssue'; issue?: IssueItem }>, {
-                title: `Issue #${pick.issue.number} ${pick.issue.title}`,
-                placeHolder: 'Choose how to use this issue',
-            });
-            if (!action) {
-                return;
-            }
+                const action = await vscode.window.showQuickPick([
+                    { label: 'Create Branch & Seed Draft PR', description: 'Create a branch and write PR files from this issue', actionType: 'branchAndDraft' as const },
+                    { label: 'Create Branch Only', description: 'Just create a local branch from this issue', actionType: 'branchOnly' as const },
+                    { label: 'Seed Draft PR Only', description: 'Write PR files from this issue on the current branch', actionType: 'draftOnly' as const },
+                    { label: 'Open Issue in Browser', description: pick.issue.url, actionType: 'openIssue' as const },
+                ] as Array<vscode.QuickPickItem & { actionType: 'branchAndDraft' | 'branchOnly' | 'draftOnly' | 'openIssue'; issue?: IssueItem }>, {
+                    title: `Issue #${pick.issue.number} ${pick.issue.title}`,
+                    placeHolder: 'Choose how to use this issue',
+                });
+                if (!action) {
+                    return;
+                }
 
-            if (action.actionType === 'openIssue') {
-                await vscode.env.openExternal(vscode.Uri.parse(pick.issue.url));
-                return;
-            }
+                if (action.actionType === 'openIssue') {
+                    await vscode.env.openExternal(vscode.Uri.parse(pick.issue.url));
+                    return;
+                }
 
-            if (action.actionType === 'branchAndDraft') {
-                await createBranchFromIssue(workspaceFolder, pick.issue);
+                if (action.actionType === 'branchAndDraft') {
+                    await createBranchFromIssue(workspaceFolder, pick.issue);
+                    await seedPrDraftFromIssue(workspaceFolder, pick.issue);
+                    return;
+                }
+
+                if (action.actionType === 'branchOnly') {
+                    await createBranchFromIssue(workspaceFolder, pick.issue);
+                    return;
+                }
+
                 await seedPrDraftFromIssue(workspaceFolder, pick.issue);
-                return;
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                log(`Issue flow failed: ${msg}`);
+                vscode.window.showErrorMessage(`PR Forge: Could not load issues — ${msg}`);
             }
-
-            if (action.actionType === 'branchOnly') {
-                await createBranchFromIssue(workspaceFolder, pick.issue);
-                return;
-            }
-
-            await seedPrDraftFromIssue(workspaceFolder, pick.issue);
         }
     );
 }

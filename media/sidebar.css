@@ -137,6 +137,66 @@ body {
   opacity: 0.75;
 }
 
+/* ── Settings dropdown ───────────────────────── */
+.settings-group {
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.1));
+}
+.settings-group > summary {
+  list-style: none;
+}
+.settings-group > summary::-webkit-details-marker {
+  display: none;
+}
+.settings-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.1));
+  cursor: pointer;
+  color: var(--vscode-foreground);
+}
+.settings-summary::after {
+  content: '▾';
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  margin-left: auto;
+}
+.settings-group[open] .settings-summary::after {
+  content: '▴';
+}
+.settings-summary-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  min-width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-summary-hint {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.8;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+.settings-body {
+  display: flex;
+  flex-direction: column;
+}
+.settings-body .card-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+.settings-body .card-row:last-child {
+  border-bottom: none;
+}
+
 /* ── Inline SVG icons ────────────────────────── */
 .icon {
   width: 14px;
