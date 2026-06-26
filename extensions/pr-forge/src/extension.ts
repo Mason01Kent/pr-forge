@@ -160,7 +160,8 @@ function readPreviewContentFromDisk(
     workspaceFolder: vscode.WorkspaceFolder,
     config: PrForgeConfig,
     kind: 'prBody' | 'prReview',
-    artifacts?: GeneratedArtifacts
+    artifacts?: GeneratedArtifacts,
+    hasSubmittedPr = false
 ): PreviewContent | undefined {
     const outputDir = path.join(workspaceFolder.uri.fsPath, config.outputDirectory);
     const bodyPath = path.join(outputDir, kind === 'prBody' ? 'PR_BODY.md' : 'PR_REVIEW.md');
@@ -180,6 +181,7 @@ function readPreviewContentFromDisk(
             timestamp: fs.statSync(bodyPath).mtime.toLocaleTimeString(),
             headBranch: getCurrentBranch(workspaceFolder.uri.fsPath) ?? undefined,
             baseBranch: config.baseBranch,
+            hasSubmittedPr,
         };
     }
 
@@ -205,8 +207,9 @@ async function openRenderedPreview(kind: 'prBody' | 'prReview'): Promise<void> {
         return;
     }
 
+    const hasSubmittedPr = !!provider.getState().submittedPrNumber;
     const content = kind === 'prBody'
-        ? lastBodyContent ?? readPreviewContentFromDisk(workspaceFolder, config, 'prBody')
+        ? (lastBodyContent ? { ...lastBodyContent, hasSubmittedPr } : readPreviewContentFromDisk(workspaceFolder, config, 'prBody', undefined, hasSubmittedPr))
         : lastReviewContent ?? readPreviewContentFromDisk(workspaceFolder, config, 'prReview');
 
     if (!content) {

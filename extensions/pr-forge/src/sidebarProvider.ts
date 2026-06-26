@@ -446,8 +446,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   </div>
 
   <div class="section">
-  <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span>Submit / Update PR</span></button>
-  <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span>Submit / Update Draft PR</span></button>
+  <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span id="btn-submit-pr-label">Submit PR</span></button>
+  <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span id="btn-submit-draft-pr-label">Submit Draft PR</span></button>
   <button class="btn btn-secondary" id="btn-open-existing-pr">${ic.openExternal}<span>Open Existing PR</span></button>
   <button class="btn btn-secondary" id="btn-open-inbox">${ic.preview}<span>Open Inbox</span></button>
   <button class="btn btn-secondary" id="btn-open-issues">${ic.preview}<span>Seed from Issue</span></button>
@@ -493,8 +493,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <div class="preview-actions" id="preview-actions">
     <button class="btn-preview-action" id="btn-preview-copy-title" style="display:none">${ic.copy}<span>Copy Title</span></button>
     <button class="btn-preview-action" id="btn-preview-copy-body">${ic.copy}<span>Copy Body</span></button>
-    <button class="btn-preview-action btn-preview-draft" id="btn-preview-draft" style="display:none">${ic.draft}<span>Submit / Update Draft</span></button>
-    <button class="btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none">${ic.submit}<span>Submit / Update PR</span></button>
+    <button class="btn-preview-action btn-preview-draft" id="btn-preview-draft" style="display:none">${ic.draft}<span id="btn-preview-draft-label">Submit Draft</span></button>
+    <button class="btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none">${ic.submit}<span id="btn-preview-submit-label">Submit PR</span></button>
   </div>
   <div class="gh-pr-title-bar" id="gh-pr-title-bar" style="display:none">
     <div class="gh-pr-title-bar-label">PR Title</div>
@@ -646,6 +646,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     keyBadge.className = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
     el('no-key-banner').style.display = (!noAuth && !state.providerKeySet && state.configExists) ? '' : 'none';
     el('settings-group').style.display = state.configExists ? '' : 'none';
+    const hasSubmittedPr = !!state.submittedPrNumber;
+    el('btn-submit-pr-label').textContent = hasSubmittedPr ? 'Update PR' : 'Submit PR';
+    el('btn-submit-draft-pr-label').textContent = hasSubmittedPr ? 'Update Draft PR' : 'Submit Draft PR';
+    el('btn-preview-submit-label').textContent = hasSubmittedPr ? 'Update PR' : 'Submit PR';
+    el('btn-preview-draft-label').textContent = hasSubmittedPr ? 'Update Draft' : 'Submit Draft';
 
     if (state.availableModels && state.availableModels.length > 0) {
       const sel = el('model-select');
