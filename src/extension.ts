@@ -195,7 +195,7 @@ function readPreviewContentFromDisk(
             body,
             timestamp: fs.statSync(bodyPath).mtime.toLocaleTimeString(),
             headBranch: getCurrentBranch(workspaceFolder.uri.fsPath) ?? undefined,
-            baseBranch: config.baseBranch,
+            baseBranch: resolveEffectiveBaseBranch(workspaceFolder, config.baseBranch),
             hasSubmittedPr,
         };
     }
@@ -348,6 +348,7 @@ async function refreshWorkspaceState(): Promise<void> {
         return;
     }
     const branch = getCurrentBranch(wf.uri.fsPath);
+    const effectiveBaseBranch = resolveEffectiveBaseBranch(wf, cfg.baseBranch);
     const keySet = await hasApiKey(extensionContext, cfg.provider);
     const hasModelSelector = cfg.provider !== 'gitlab';
     let availableModels: string[] = [];
@@ -372,7 +373,7 @@ async function refreshWorkspaceState(): Promise<void> {
         provider: cfg.provider,
         providerKeySet: keySet,
         currentBranch: branch,
-        baseBranch: cfg.baseBranch,
+        baseBranch: effectiveBaseBranch,
         currentModel: cfg.defaultModel,
         availableModels,
         runTestsOnGenerate: cfg.runTestsOnGenerate ?? true,
@@ -410,7 +411,7 @@ async function refreshWorkspaceState(): Promise<void> {
             const scmHost: 'github' | 'gitlab' = /gitlab/i.test(remoteUrl) ? 'gitlab' : 'github';
             provider.updateState({ scmHost });
             const branch = getCurrentBranch(wf.uri.fsPath);
-            if (!branch || branch === cfg.baseBranch) {
+            if (!branch || branch === effectiveBaseBranch) {
                 provider.updateState({ existingPrNumber: null, existingPrUrl: null });
                 return;
             }
@@ -480,6 +481,40 @@ function readConfig(workspaceFolder: vscode.WorkspaceFolder): PrForgeConfig | nu
         log(`Error reading config: ${e}`);
         return null;
     }
+}
+
+function hasGitRef(cwd: string, ref: string): boolean {
+    try {
+        execSync(`git rev-parse --verify --quiet "${ref}^{commit}"`, { cwd, stdio: 'pipe' });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function resolveEffectiveBaseBranch(workspaceFolder: vscode.WorkspaceFolder, configuredBaseBranch: string): string {
+    const cwd = workspaceFolder.uri.fsPath;
+    if (configuredBaseBranch && hasGitRef(cwd, configuredBaseBranch)) {
+        return configuredBaseBranch;
+    }
+
+    try {
+        const remoteHead = execSync('git symbolic-ref --quiet --short refs/remotes/origin/HEAD', { cwd }).toString().trim();
+        const remoteBranch = remoteHead.replace(/^origin\//, '');
+        if (remoteBranch && hasGitRef(cwd, remoteBranch)) {
+            return remoteBranch;
+        }
+    } catch {
+        /* fall through */
+    }
+
+    for (const candidate of ['master', 'main', 'develop']) {
+        if (hasGitRef(cwd, candidate)) {
+            return candidate;
+        }
+    }
+
+    return configuredBaseBranch;
 }
 
 function writeConfig(workspaceFolder: vscode.WorkspaceFolder, config: PrForgeConfig): void {
@@ -589,8 +624,9 @@ async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder, 
     const prRiskAreas = isSellWise
         ? ['authentication', 'authorization', 'ownership isolation', 'PostgreSQL migrations', 'decimal money handling', 'inventory transactions', 'refunds', 'production readiness', 'config/secrets safety']
         : ['security', 'tests', 'configuration', 'data integrity', 'deployment risk'];
+    const baseBranch = resolveEffectiveBaseBranch(workspaceFolder, 'main');
     const config: PrForgeConfig = {
-        schemaVersion: 8, projectName, baseBranch: 'main', projectType,
+        schemaVersion: 8, projectName, baseBranch, projectType,
         testCommand: testCommands[projectType] || '', runTestsOnGenerate: true, includeRecentCommits: false,
         includeCommitSummaries: false, includeFileWalkthrough: false, reReviewOnPush: false,
         outputDirectory: '.pr',
@@ -625,10 +661,11 @@ async function generatePrBody(): Promise<void> {
     if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
     const config = await ensureConfig(workspaceFolder);
     if (!config) return;
+    const effectiveBaseBranch = resolveEffectiveBaseBranch(workspaceFolder, config.baseBranch);
 
     const currentBranch = getCurrentBranch(workspaceFolder.uri.fsPath);
-    if (currentBranch === config.baseBranch) {
-        vscode.window.showErrorMessage(`PR Forge: You are on ${config.baseBranch}. Switch to a feature branch before generating.`);
+    if (currentBranch === effectiveBaseBranch) {
+        vscode.window.showErrorMessage(`PR Forge: You are on ${effectiveBaseBranch}. Switch to a feature branch before generating.`);
         return;
     }
 
@@ -659,7 +696,7 @@ async function generatePrBody(): Promise<void> {
                     token.onCancellationRequested(() => abortController.abort());
                     const genOpts = {
                         workspacePath: workspaceFolder.uri.fsPath,
-                        baseBranch: config.baseBranch,
+                        baseBranch: effectiveBaseBranch,
                         includeRecentCommits: config.includeRecentCommits ?? false,
                         includeCommitSummaries: config.includeCommitSummaries ?? false,
                         includeFileWalkthrough: config.includeFileWalkthrough ?? false,
@@ -688,7 +725,7 @@ async function generatePrBody(): Promise<void> {
                 }
             }
             telemetryEvent('generate.prBody', { provider: noAiKey ? 'none' : config.provider, model: noAiKey ? 'template' : config.defaultModel, outcome: 'success' }, { durationMs: Date.now() - t0, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, ...(result.usage.estimatedCostUsd !== undefined ? { estCostUsd: result.usage.estimatedCostUsd } : {}) });
-            const previewContent: PreviewContent = { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: config.baseBranch };
+            const previewContent: PreviewContent = { kind: 'prBody', title: result.title, body: result.body, timestamp: new Date().toLocaleString(), headBranch: result.branch, baseBranch: effectiveBaseBranch };
             lastBodyContent = previewContent;
             PreviewPanel.createOrShow(extensionUri, previewContent, workspaceFolder.uri.fsPath, config.outputDirectory);
             lastPreviewMarkdown = result.body;
@@ -713,7 +750,7 @@ async function generatePrBody(): Promise<void> {
     if (!success) {
         clearGenerationUiState();
     }
-    provider.updateState({ configExists: true, projectName: config.projectName, provider: config.provider, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
+    provider.updateState({ configExists: true, projectName: config.projectName, provider: config.provider, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: effectiveBaseBranch });
     hasApiKey(extensionContext, config.provider).then(keySet => provider.updateState({ providerKeySet: keySet }));
 }
 
@@ -722,10 +759,11 @@ async function generatePrReview(): Promise<void> {
     if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
     const config = await ensureConfig(workspaceFolder);
     if (!config) return;
+    const effectiveBaseBranch = resolveEffectiveBaseBranch(workspaceFolder, config.baseBranch);
 
     const currentBranch = getCurrentBranch(workspaceFolder.uri.fsPath);
-    if (currentBranch === config.baseBranch) {
-        vscode.window.showErrorMessage(`PR Forge: You are on ${config.baseBranch}. Switch to a feature branch before generating.`);
+    if (currentBranch === effectiveBaseBranch) {
+        vscode.window.showErrorMessage(`PR Forge: You are on ${effectiveBaseBranch}. Switch to a feature branch before generating.`);
         return;
     }
 
@@ -753,6 +791,9 @@ async function generatePrReview(): Promise<void> {
         );
         if (action === 'Set API Key') await promptSetApiKey(extensionContext, config.provider);
     }
+    const reviewModel = activeProvider === config.provider
+        ? config.defaultModel
+        : (DEFAULT_MODELS[activeProvider] ?? config.defaultModel);
 
     outputChannel.show(true);
     provider.notifyRunStart('prReview');
@@ -771,7 +812,7 @@ async function generatePrReview(): Promise<void> {
                     token.onCancellationRequested(() => abortController.abort());
                     const genOpts = {
                         workspacePath: workspaceFolder.uri.fsPath,
-                        baseBranch: config.baseBranch,
+                        baseBranch: effectiveBaseBranch,
                         includeRecentCommits: config.includeRecentCommits ?? false,
                         includeCommitSummaries: config.includeCommitSummaries ?? false,
                         includeFileWalkthrough: config.includeFileWalkthrough ?? false,
@@ -784,7 +825,7 @@ async function generatePrReview(): Promise<void> {
                         testCommand: config.testCommand,
                         runTests: config.runTestsOnGenerate ?? true,
                         generateReview: true,
-                        llm: { provider: activeProvider, apiKey, model: config.defaultModel },
+                        llm: { provider: activeProvider, apiKey, model: reviewModel },
                         onLog: (msg: string) => logGenerationStep(msg),
                         signal: abortController.signal,
                     };
@@ -820,7 +861,7 @@ async function generatePrReview(): Promise<void> {
     if (!success) {
         clearGenerationUiState();
     }
-    provider.updateState({ configExists: true, projectName: config.projectName, provider: config.provider, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: config.baseBranch });
+    provider.updateState({ configExists: true, projectName: config.projectName, provider: config.provider, currentBranch: getCurrentBranch(workspaceFolder.uri.fsPath), baseBranch: effectiveBaseBranch });
     hasApiKey(extensionContext, config.provider).then(keySet => provider.updateState({ providerKeySet: keySet }));
 }
 
@@ -854,7 +895,7 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
                     token.onCancellationRequested(() => abortController.abort());
                     return regeneratePr({
                         workspacePath: workspaceFolder.uri.fsPath,
-                        baseBranch: config.baseBranch,
+                        baseBranch: resolveEffectiveBaseBranch(workspaceFolder, config.baseBranch),
                         includeRecentCommits: config.includeRecentCommits ?? false,
                         includeCommitSummaries: config.includeCommitSummaries ?? false,
                         includeFileWalkthrough: config.includeFileWalkthrough ?? false,
@@ -1893,6 +1934,7 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
     if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
     const config = readConfig(workspaceFolder);
     if (!config) { vscode.window.showErrorMessage('PR Forge: No config found.'); return; }
+    const effectiveBaseBranch = resolveEffectiveBaseBranch(workspaceFolder, config.baseBranch);
 
     const titlePath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, 'PR_TITLE.txt');
     const bodyPath = path.join(workspaceFolder.uri.fsPath, config.outputDirectory, 'PR_BODY.md');
@@ -1948,8 +1990,8 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
         vscode.window.showErrorMessage('PR Forge: You are in detached HEAD state. Check out a branch first.');
         return;
     }
-    if (headBranch === config.baseBranch) {
-        vscode.window.showErrorMessage(`PR Forge: You are on the base branch (${config.baseBranch}). Switch to a feature branch first.`);
+    if (headBranch === effectiveBaseBranch) {
+        vscode.window.showErrorMessage(`PR Forge: You are on the base branch (${effectiveBaseBranch}). Switch to a feature branch first.`);
         return;
     }
 
@@ -1988,7 +2030,7 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
     let prNumber: number | undefined;
 
     if (existingPr) {
-        const action = await promptExistingPrAction(existingPr, title, body, owner, repo, headBranch, config.baseBranch, draft);
+        const action = await promptExistingPrAction(existingPr, title, body, owner, repo, headBranch, effectiveBaseBranch, draft);
         if (action !== 'update') {
             return;
         }
@@ -2004,7 +2046,7 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
                         title,
                         body,
                         head: headBranch,
-                        base: config.baseBranch,
+                        base: effectiveBaseBranch,
                         token: token!,
                         labels: config.prLabels ?? [],
                         reviewers: config.prReviewers ?? [],
@@ -2027,7 +2069,7 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
         const submitLabel = draft ? 'Submit Draft' : 'Submit';
         const draftLabel = draft ? ' (Draft)' : '';
         const confirm = await vscode.window.showInformationMessage(
-            `Submit${draftLabel} PR: "${title}"\n${owner}/${repo}  •  ${headBranch} → ${config.baseBranch}`,
+            `Submit${draftLabel} PR: "${title}"\n${owner}/${repo}  •  ${headBranch} → ${effectiveBaseBranch}`,
             { modal: true },
             submitLabel
         );
@@ -2046,7 +2088,7 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
                         title,
                         body,
                         head: headBranch,
-                        base: config.baseBranch,
+                        base: effectiveBaseBranch,
                         token: token!,
                         draft,
                         labels: config.prLabels ?? [],
@@ -2067,7 +2109,7 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
                         try {
                             const duplicatePr = await scm.findOpenPr({ owner, repo, head: headBranch, token: token! });
                             if (duplicatePr) {
-                                const duplicateAction = await promptExistingPrAction(duplicatePr, title, body, owner, repo, headBranch, config.baseBranch, draft);
+                                const duplicateAction = await promptExistingPrAction(duplicatePr, title, body, owner, repo, headBranch, effectiveBaseBranch, draft);
                                 if (duplicateAction === 'update') {
                                     const result = await scm.updatePr({
                                         owner,
@@ -2076,7 +2118,7 @@ async function submitPrInternalV2(draft: boolean): Promise<void> {
                                         title,
                                         body,
                                         head: headBranch,
-                                        base: config.baseBranch,
+                                        base: effectiveBaseBranch,
                                         token: token!,
                                         labels: config.prLabels ?? [],
                                         reviewers: config.prReviewers ?? [],

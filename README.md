@@ -20,6 +20,8 @@ Change code  →  Generate title/body/review  →  Preview & edit  →  Submit o
 
 ## Demo assets needed
 
+![PR Forge sidebar](docs/assets/sidebar.png)
+
 > Screenshots and GIFs are not yet in the repo. Contributions welcome.
 
 | Placeholder | What to capture |
@@ -28,6 +30,11 @@ Change code  →  Generate title/body/review  →  Preview & edit  →  Submit o
 | `docs/assets/generated-pr-body.png` | Generated PR body open in the editor |
 | `docs/assets/generated-review.png` | Generated review document |
 | `docs/assets/submit-pr-flow.gif` | Full submit-PR flow from sidebar to GitHub |
+
+### Asset status
+
+- `sidebar.png` is wired into the README and renders on GitHub.
+- `generated-pr-body.png`, `generated-review.png`, and `submit-pr-flow.gif` are still pending and intentionally left as placeholders until the files exist in `docs/assets/`.
 
 ---
 
