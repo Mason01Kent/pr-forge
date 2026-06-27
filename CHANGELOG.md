@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.3
+
+### Fixed
+- Sidebar buttons were completely unresponsive (acting like static images) due to a duplicate `const` declaration in the webview script, which raised a `SyntaxError` that prevented the entire script — and all button event handlers — from loading. Only native controls (checkboxes, dropdowns) kept working. Removing the redundant declaration restores all buttons, the preview/back navigation, and the stale-state reset.
+
 ## 1.5.9
 
 ### Added

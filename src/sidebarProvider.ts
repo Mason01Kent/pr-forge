@@ -836,7 +836,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-regen').disabled = !!state.isRunning;
 
     const canSubmit = state.bodyExists && !_noFeatureBranch;
-    const hasOpenPr = !!(state.existingPrNumber || state.submittedPrNumber);
     const openPrNum = state.existingPrNumber || state.submittedPrNumber;
     el('btn-pr-body').disabled = !!state.isRunning || _noFeatureBranch;
     el('btn-pr-review').disabled = !!state.isRunning || _noFeatureBranch;
