@@ -2332,8 +2332,70 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         },
         onOpenPrUrl: () => {
-            const url = provider.getState().submittedPrUrl;
+            const state = provider.getState();
+            const url = state.submittedPrUrl ?? state.existingPrUrl;
             if (url) { vscode.env.openExternal(vscode.Uri.parse(url)); }
+        },
+        onMergePr: async () => {
+            const workspaceFolder = await resolveTargetProjectFolder();
+            if (!workspaceFolder) { vscode.window.showErrorMessage('PR Forge: No workspace folder open.'); return; }
+            if (!(await ensureConfig(workspaceFolder))) return;
+            const remote = await resolveRemoteContext(workspaceFolder);
+            if (!remote) { return; }
+
+            const state = provider.getState();
+            const prNumber = state.submittedPrNumber ?? state.existingPrNumber;
+            const url = state.submittedPrUrl ?? state.existingPrUrl;
+            if (!prNumber || !url) {
+                vscode.window.showInformationMessage('PR Forge: No submitted PR or merge request is available to open.');
+                return;
+            }
+
+            if (state.submittedPrDraft) {
+                vscode.window.showInformationMessage('PR Forge: Draft PRs cannot be merged. Mark it ready first.');
+                return;
+            }
+
+            const term = state.scmHost === 'gitlab' ? 'merge request' : 'pull request';
+            const confirm = await vscode.window.showWarningMessage(
+                `Merge happens on the live ${term} page and can be destructive if checks, approvals, or branch state are wrong.\nOpen the PR page to review it, or merge now?\n${url}`,
+                { modal: true },
+                'Open PR',
+                'Merge Now',
+                'Cancel'
+            );
+            if (confirm === 'Open PR') {
+                await vscode.env.openExternal(vscode.Uri.parse(url));
+                return;
+            }
+
+            if (confirm !== 'Merge Now') {
+                return;
+            }
+
+            try {
+                await remote.provider.mergePr({ owner: remote.owner, repo: remote.repo, number: prNumber, token: remote.token });
+                telemetryEvent('mergePr', { outcome: 'success', host: state.scmHost ?? 'unknown' });
+                vscode.window.showInformationMessage(`PR Forge: ${term.charAt(0).toUpperCase() + term.slice(1)} #${prNumber} merged.`);
+                await vscode.env.openExternal(vscode.Uri.parse(url));
+                provider.updateState({
+                    submittedPrNumber: null,
+                    submittedPrUrl: null,
+                    submittedPrDraft: false,
+                    submittedPrTimestamp: null,
+                    existingPrNumber: null,
+                    existingPrUrl: null,
+                    readinessState: null,
+                    readinessSummary: null,
+                    readinessBlockers: [],
+                    readinessInfo: [],
+                    readinessUpdatedAt: null,
+                });
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                telemetryError('mergePr', { outcome: 'error', host: state.scmHost ?? 'unknown', errorKind: classifyError(err) });
+                vscode.window.showErrorMessage(`PR Forge: Could not merge ${term} â€” ${msg}`);
+            }
         },
         onPostReview: () => { void postReviewToPr(); },
         onPostInlineReview: () => { void postInlineReview(); },

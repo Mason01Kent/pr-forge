@@ -52,11 +52,11 @@ describe('parseRemote', () => {
     assert.strictEqual(parseRemote('https://bitbucket.org/owner/repo.git', 'token'), null);
   });
 
-  it('returns a GitHub provider exposing the full SCM interface', () => {
+    it('returns a GitHub provider exposing the full SCM interface', () => {
     const result = parseRemote('https://github.com/owner/repo.git', 'token');
     assert.ok(result);
     assert.strictEqual(result!.provider.name, 'GitHub');
-    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'listReviewThreads', 'replyToReviewThread', 'resolveReviewThread', 'reopenReviewThread', 'updatePr', 'postPrComment', 'createReview'] as const) {
+    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'mergePr', 'listReviewThreads', 'replyToReviewThread', 'resolveReviewThread', 'reopenReviewThread', 'updatePr', 'postPrComment', 'createReview', 'closePr'] as const) {
       assert.strictEqual(typeof result!.provider[method], 'function', `missing ${method}`);
     }
   });
@@ -79,10 +79,10 @@ describe('parseRemote', () => {
     assert.strictEqual(parseRemote('https://bitbucket.org/owner/repo.git', 'tok'), null);
   });
 
-  it('GitLabScmProvider exposes the full SCM interface', () => {
+    it('GitLabScmProvider exposes the full SCM interface', () => {
     const provider = new GitLabScmProvider('tok');
     assert.strictEqual(provider.name, 'GitLab');
-    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'listReviewThreads', 'replyToReviewThread', 'resolveReviewThread', 'reopenReviewThread', 'updatePr', 'postPrComment', 'createReview'] as const) {
+    for (const method of ['createPr', 'findOpenPr', 'listOpenPrs', 'getReadiness', 'mergePr', 'listReviewThreads', 'replyToReviewThread', 'resolveReviewThread', 'reopenReviewThread', 'updatePr', 'postPrComment', 'createReview', 'closePr'] as const) {
       assert.strictEqual(typeof provider[method], 'function', `missing ${method}`);
     }
   });
@@ -196,6 +196,16 @@ describe('GitLabScmProvider', () => {
         } finally { mock.close(); }
     });
 
+    it('mergePr returns merged url on 200', async () => {
+        const mock = await mockGlServer(200, { iid: 5, web_url: 'https://gitlab.com/g/r/-/merge_requests/5', state: 'merged' });
+        try {
+            const provider = new GitLabScmProvider('tok', mock.url);
+            const result = await provider.mergePr({ owner: 'g', repo: 'r', number: 5, token: 'tok' });
+            assert.strictEqual(result.number, 5);
+            assert.ok(result.url.includes('5'));
+        } finally { mock.close(); }
+    });
+
     it('postPrComment returns a url with the note id', async () => {
         const mock = await mockGlServer(201, { id: 99, noteable_iid: 5 });
         try {
@@ -228,6 +238,25 @@ describe('GitLabScmProvider', () => {
             assert.ok(server.requests.some(request => request.body.includes('addPullRequestReviewThreadReply')));
             assert.ok(server.requests.some(request => request.body.includes('resolveReviewThread')));
             assert.ok(server.requests.some(request => request.body.includes('unresolveReviewThread')));
+        } finally {
+            server.close();
+        }
+    });
+
+    it('mergePr performs a GitHub merge', async () => {
+        const server = await mockApiServer((req) => {
+            if (req.method === 'PUT' && req.path === '/repos/g/r/pulls/12/merge') {
+                const payload = JSON.parse(req.body || '{}') as { merge_method?: string };
+                assert.strictEqual(payload.merge_method, 'merge');
+                return { statusCode: 200, body: { merged: true, message: 'Pull Request successfully merged' } };
+            }
+            return { statusCode: 404, body: { message: `unexpected ${req.method} ${req.path}` } };
+        });
+        try {
+            const provider = new GitHubScmProvider('tok', server.url);
+            const result = await provider.mergePr({ owner: 'g', repo: 'r', number: 12, token: 'tok' });
+            assert.strictEqual(result.number, 12);
+            assert.ok(result.url.includes('/pull/12'));
         } finally {
             server.close();
         }
