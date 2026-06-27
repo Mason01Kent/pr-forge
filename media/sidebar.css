@@ -149,33 +149,6 @@ body {
   opacity: 0.85;
 }
 
-/* ── Inline API key actions ──────────────────── */
-.key-row-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.key-action {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-size: 11px;
-  cursor: pointer;
-  color: var(--vscode-textLink-foreground);
-}
-.key-action:hover {
-  text-decoration: underline;
-  color: var(--vscode-textLink-activeForeground);
-}
-.key-action-danger {
-  color: var(--vscode-errorForeground, #f14c4c);
-}
-.btn-remove-key {
-  color: var(--vscode-errorForeground, #f14c4c) !important;
-}
-
-
 /* ── Sections ────────────────────────────────── */
 .section {
   display: flex;
@@ -364,15 +337,20 @@ body {
   background: var(--vscode-button-secondaryHoverBackground);
 }
 
-/* Danger — destructive, always visible */
+/* Danger — destructive, always clearly legible */
 .btn-danger {
-  background: rgba(244, 135, 113, 0.12);
-  color: var(--vscode-errorForeground, #f48771);
+  background: rgba(244, 135, 113, 0.18);
+  color: #ff9b85;
   font-size: 11px;
-  border: 1px solid rgba(244, 135, 113, 0.4);
+  font-weight: 500;
+  border: 1px solid rgba(244, 135, 113, 0.6);
 }
 .btn-danger:hover:not(:disabled) {
-  background: rgba(244, 135, 113, 0.22);
+  background: rgba(244, 135, 113, 0.3);
+  color: #ffb3a0;
+}
+.btn-danger .icon {
+  opacity: 0.95;
 }
 
 /* ── Horizontal button row ───────────────────── */

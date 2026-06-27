@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.6
+
+### Changed
+- Removed the inline **Change / Remove** links next to the API Key badge in the status card — key management now lives solely in **Setup & Tools** (Change API Key / Remove API Key).
+- Made the destructive buttons (**Reset**, **Close PR**, **Remove API Key**) clearly legible — they now share a higher-contrast danger style with a brighter label, tinted background, and stronger border, instead of low-contrast red text on a dark button.
+
 ## 1.6.5
 
 ### Fixed

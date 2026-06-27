@@ -2,7 +2,7 @@
   "name": "pr-forge",
   "displayName": "PR Forge",
   "description": "Generate PR titles, descriptions, and review summaries from git diffs, then submit or update pull requests and merge requests from VS Code.",
-  "version": "1.6.5",
+  "version": "1.6.6",
   "publisher": "masonkent",
   "icon": "media/icon.png",
   "galleryBanner": {
