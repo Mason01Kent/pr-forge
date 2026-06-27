@@ -368,123 +368,153 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
 <div id="tools-view">
+
+  <!-- 1. Header -->
   <div class="header">
     <span class="header-icon">${ic.pr}</span>
     <h2 class="header-title">PR Forge</h2>
   </div>
 
+  <!-- 2. Connection / status -->
   <div class="card" id="status-card">
     <div class="card-row"><span class="label">Project</span><span class="value" id="project-name">-</span></div>
+    <div class="card-row" id="branch-row" style="display:none"><span class="label">Branch</span><span class="value" id="branch-name"></span></div>
     <div class="card-row"><span class="label">Config</span><span class="badge warn" id="config-badge">Not found</span></div>
     <div class="card-row"><span class="label">Provider</span><span class="value" id="provider-name">-</span></div>
     <div class="card-row"><span class="label">API Key</span><span class="badge warn" id="key-badge">Not set</span></div>
-    <details class="settings-group" id="settings-group">
-      <summary class="settings-summary" title="Expand or collapse the model picker and generation settings">
-        <span class="settings-summary-label">Settings</span>
-        <span class="settings-summary-hint">Model and generation toggles</span>
-      </summary>
-      <div class="settings-body">
-        <div class="card-row" id="model-row" style="display:none" title="Choose the model used for generation">
-          <span class="label">Model</span>
-          <select class="select-model" id="model-select" title="Choose the model used for PR body and review generation"></select>
-        </div>
-        <div class="card-row" id="run-tests-row" style="display:none" title="Run the configured tests before generating content">
-          <span class="label">Run tests</span>
-          <label class="toggle" title="Run the configured tests before generating content">
-            <input type="checkbox" id="chk-run-tests" checked>
-            <span class="toggle-label" id="run-tests-label">On</span>
-          </label>
-        </div>
-        <div class="card-row" id="commit-row" style="display:none" title="Include recent commits in the prompt">
-          <span class="label">Recent commits</span>
-          <label class="toggle" title="Include recent commits in the prompt">
-            <input type="checkbox" id="chk-commits">
-            <span class="toggle-label" id="commits-label">Off</span>
-          </label>
-        </div>
-        <div class="card-row" id="commit-summary-row" style="display:none" title="Append an AI-written commit summary table to the PR body">
-          <span class="label">Commit summaries</span>
-          <label class="toggle" title="Append an AI-written commit summary table to the PR body">
-            <input type="checkbox" id="chk-commit-summaries">
-            <span class="toggle-label" id="commit-summaries-label">Off</span>
-          </label>
-        </div>
-        <div class="card-row" id="file-walkthrough-row" style="display:none" title="Append a per-file changes table to the PR body">
-          <span class="label">File walkthrough</span>
-          <label class="toggle" title="Append a per-file changes table to the PR body">
-            <input type="checkbox" id="chk-file-walkthrough">
-            <span class="toggle-label" id="file-walkthrough-label">Off</span>
-          </label>
-        </div>
-        <div class="card-row" id="rereview-row" style="display:none" title="Offer to re-run the review when new commits land on the branch">
-          <span class="label">Re-review on push</span>
-          <label class="toggle" title="Offer to re-run the review when new commits land on the branch">
-            <input type="checkbox" id="chk-rereview">
-            <span class="toggle-label" id="rereview-label">Off</span>
-          </label>
-        </div>
-      </div>
-    </details>
-    <div class="card-row" id="branch-row" style="display:none"><span class="label">Branch</span><span class="value" id="branch-name"></span></div>
-    <div class="card-row" id="last-run-row" style="display:none"><span class="label">Last run</span><span class="value" id="last-run-info"></span></div>
-    <div class="card-row" id="generated-title-row" style="display:none"><span class="label">Title</span><span class="value gh-pr-title-bar-text" id="generated-title-text"></span></div>
-    <div class="card-row" id="submitted-pr-row" style="display:none"><span class="label">Submitted</span><button class="btn-link" id="btn-submitted-pr-link"></button></div>
+    <div class="card-row" id="submitted-pr-row" style="display:none"><span class="label">PR</span><button class="btn-link" id="btn-submitted-pr-link"></button></div>
     <div class="card-row" id="readiness-row" style="display:none"><span class="label">Readiness</span><span class="badge warn" id="readiness-badge">Unknown</span></div>
-    <div class="card-row" id="readiness-summary-row" style="display:none"><span class="label">Summary</span><span class="value" id="readiness-summary"></span></div>
-    <div class="card-row" id="readiness-blockers-row" style="display:none"><span class="label">Blockers</span><span class="value" id="readiness-blockers"></span></div>
-    <div class="card-row" id="readiness-info-row" style="display:none"><span class="label">Info</span><span class="value" id="readiness-info"></span></div>
-    <div class="card-row" id="readiness-updated-row" style="display:none"><span class="label">Updated</span><span class="value" id="readiness-updated"></span></div>
   </div>
 
+  <!-- Hidden rows kept for JS compatibility -->
+  <div style="display:none" aria-hidden="true">
+    <div id="last-run-row"><span id="last-run-info"></span></div>
+    <div id="generated-title-row"><span class="gh-pr-title-bar-text" id="generated-title-text"></span></div>
+    <div id="readiness-summary-row"><span id="readiness-summary"></span></div>
+    <div id="readiness-blockers-row"><span id="readiness-blockers"></span></div>
+    <div id="readiness-info-row"><span id="readiness-info"></span></div>
+    <div id="readiness-updated-row"><span id="readiness-updated"></span></div>
+  </div>
+
+  <!-- No API key notice -->
   <div class="no-key-banner" id="no-key-banner" style="display:none">
-    <strong>No AI provider configured.</strong>
-    <strong>Generate PR Body</strong> will produce a structured template from your git diff and commits — no AI required. PR Review and AI-written descriptions require a key — click <em>Set API Key</em> to add one.
+    <strong>No AI key configured.</strong> Generate PR Body produces a structured template from your diff and commits — no AI required. For AI-written descriptions and code review, click <em>Set API Key</em>.
   </div>
 
+  <div class="workflow-hint" id="workflow-hint" style="display:none">
+    <span class="workflow-hint-label">Next step</span>
+    <span class="workflow-hint-text" id="workflow-hint-text"></span>
+  </div>
+
+  <!-- 3. Primary actions -->
   <div class="section">
+    <button class="btn btn-primary" id="btn-pr-body" title="Generate or refresh the PR body from git history">${ic.body}<span id="btn-pr-body-label">Generate PR Body</span></button>
+    <button class="btn btn-secondary" id="btn-pr-review" title="Generate a code review draft from the current branch">${ic.review}<span id="btn-pr-review-label">Generate PR Review</span></button>
+  </div>
+
+  <!-- 4. Options (progressive disclosure, shown when config exists) -->
+  <details class="settings-group section-details" id="settings-group" style="display:none">
+    <summary class="settings-summary" title="Model and generation options">
+      <span class="settings-summary-label">Options</span>
+      <span class="settings-summary-hint">model · toggles</span>
+    </summary>
+    <div class="settings-body">
+      <div class="card-row" id="model-row" style="display:none">
+        <span class="label">Model</span>
+        <select class="select-model" id="model-select" title="Choose the model used for PR body and review generation"></select>
+      </div>
+      <div class="card-row" id="run-tests-row" style="display:none">
+        <span class="label">Run tests</span>
+        <label class="toggle" title="Run your configured tests before generating">
+          <input type="checkbox" id="chk-run-tests" checked>
+          <span class="toggle-label" id="run-tests-label">On</span>
+        </label>
+      </div>
+      <div class="card-row" id="commit-row" style="display:none">
+        <span class="label">Recent commits</span>
+        <label class="toggle" title="Include recent commits in the prompt context">
+          <input type="checkbox" id="chk-commits">
+          <span class="toggle-label" id="commits-label">Off</span>
+        </label>
+      </div>
+      <div class="card-row" id="commit-summary-row" style="display:none">
+        <span class="label">Commit summaries</span>
+        <label class="toggle" title="Append a per-commit summary table to the PR body">
+          <input type="checkbox" id="chk-commit-summaries">
+          <span class="toggle-label" id="commit-summaries-label">Off</span>
+        </label>
+      </div>
+      <div class="card-row" id="file-walkthrough-row" style="display:none">
+        <span class="label">File walkthrough</span>
+        <label class="toggle" title="Append a per-file changes table to the PR body">
+          <input type="checkbox" id="chk-file-walkthrough">
+          <span class="toggle-label" id="file-walkthrough-label">Off</span>
+        </label>
+      </div>
+      <div class="card-row" id="rereview-row" style="display:none">
+        <span class="label">Re-review on push</span>
+        <label class="toggle" title="Offer to re-run the review when new commits land on this branch">
+          <input type="checkbox" id="chk-rereview">
+          <span class="toggle-label" id="rereview-label">Off</span>
+        </label>
+      </div>
+    </div>
+  </details>
+
+  <!-- 5. Submission (shown once a PR body exists) -->
+  <div class="section" id="section-submit" style="display:none">
     <div class="btn-row">
-      <button class="btn btn-ghost" id="btn-set-key">Set API Key</button>
-      <button class="btn btn-ghost" id="btn-init-config">Init Config</button>
-      <button class="btn btn-ghost" id="btn-open-config">Open Config</button>
+      <button class="btn btn-primary" id="btn-submit-pr" disabled title="Create or update the PR for this branch">${ic.submit}<span id="btn-submit-pr-label">Submit PR</span></button>
+      <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled title="Create or update a draft PR for this branch">${ic.draft}<span id="btn-submit-draft-pr-label">Submit Draft</span></button>
     </div>
   </div>
 
-  <div class="section">
+  <!-- 6. Post-submit PR actions (shown once a PR is submitted) -->
+  <div class="section" id="section-pr-actions" style="display:none">
     <div class="btn-row">
-      <button class="btn btn-primary" id="btn-pr-body">${ic.body}<span id="btn-pr-body-label">Generate PR Body</span></button>
-      <button class="btn btn-secondary" id="btn-pr-review">${ic.review}<span id="btn-pr-review-label">Generate PR Review</span></button>
+      <button class="btn btn-secondary" id="btn-open-github" style="display:none" title="Open the submitted PR in your browser">${ic.openExternal}<span>Open PR</span></button>
+      <button class="btn btn-secondary" id="btn-refresh-readiness" title="Re-check merge readiness and checks">${ic.review}<span>Check Readiness</span></button>
     </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-open-review-threads" style="display:none" title="Browse review comments and discussions">${ic.review}<span>Threads</span></button>
+      <button class="btn btn-secondary" id="btn-post-review" style="display:none" title="Post the generated review as one comment">${ic.review}<span>Post Review</span></button>
+      <button class="btn btn-secondary" id="btn-post-inline-review" style="display:none" title="Post line-anchored review comments on the diff">${ic.review}<span>Inline Review</span></button>
+    </div>
+    <button class="btn btn-danger" id="btn-close-pr" style="display:none" title="Close the submitted PR for this branch">${ic.clear}<span>Close PR</span></button>
   </div>
 
-  <div class="section">
-  <button class="btn btn-primary" id="btn-submit-pr" disabled>${ic.submit}<span id="btn-submit-pr-label">Submit PR</span></button>
-  <button class="btn btn-secondary" id="btn-submit-draft-pr" disabled>${ic.draft}<span id="btn-submit-draft-pr-label">Submit Draft PR</span></button>
-  <button class="btn btn-secondary" id="btn-open-existing-pr">${ic.openExternal}<span>Open Existing PR</span></button>
-  <button class="btn btn-secondary" id="btn-open-inbox">${ic.preview}<span>Open Inbox</span></button>
-  <button class="btn btn-secondary" id="btn-open-issues">${ic.preview}<span>Seed from Issue</span></button>
-  <button class="btn btn-secondary" id="btn-refresh-readiness">${ic.review}<span>Check Readiness</span></button>
-  <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR</span></button>
-  <button class="btn btn-secondary" id="btn-open-review-threads" style="display:none">${ic.review}<span>Review Threads</span></button>
-  <button class="btn btn-secondary" id="btn-post-review" style="display:none">${ic.review}<span>Post Review to PR</span></button>
-  <button class="btn btn-secondary" id="btn-post-inline-review" style="display:none">${ic.review}<span>Post Inline Review</span></button>
-  <button class="btn btn-danger" id="btn-close-pr" style="display:none">${ic.clear}<span>Close PR</span></button>
-  <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
-  </div>
-
+  <!-- 7. Generated output shortcuts (shown when body or review exists) -->
   <div class="section generated-content-card" id="generated-content-card" style="display:none">
     <div class="generated-content-summary">
       <span class="generated-content-status" id="generated-content-status"></span>
     </div>
     <div class="btn-row generated-content-actions">
-      <button class="btn btn-secondary btn-compact" id="btn-generated-open-body" disabled>${ic.preview}<span>Open Body File</span></button>
-      <button class="btn btn-secondary btn-compact" id="btn-generated-open-review" disabled>${ic.review}<span>Open Review File</span></button>
+      <button class="btn btn-secondary btn-compact" id="btn-generated-preview-body" disabled title="Open the rendered PR body preview">${ic.preview}<span>Preview Body</span></button>
+      <button class="btn btn-secondary btn-compact" id="btn-generated-preview-review" disabled title="Open the rendered review preview">${ic.review}<span>Preview Review</span></button>
     </div>
     <div class="btn-row generated-content-actions">
-      <button class="btn btn-secondary btn-compact" id="btn-generated-preview-body" disabled>${ic.preview}<span>Preview Body</span></button>
-      <button class="btn btn-secondary btn-compact" id="btn-generated-preview-review" disabled>${ic.review}<span>Preview Review</span></button>
+      <button class="btn btn-secondary btn-compact" id="btn-generated-open-body" disabled title="Open the saved PR body file">${ic.preview}<span>Open Body</span></button>
+      <button class="btn btn-secondary btn-compact" id="btn-generated-open-review" disabled title="Open the saved review file">${ic.review}<span>Open Review</span></button>
     </div>
   </div>
 
+  <!-- 8. Setup + low-frequency actions -->
+  <div class="section section-setup">
+    <span class="section-label">Setup</span>
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="btn-set-key" title="Add or change the configured API key">Set API Key</button>
+      <button class="btn btn-ghost" id="btn-init-config" title="Create or refresh the project config file">Init Config</button>
+      <button class="btn btn-ghost" id="btn-open-config" title="Open the project config file">Open Config</button>
+    </div>
+    <div class="btn-row setup-extras">
+      <button class="btn btn-secondary" id="btn-open-existing-pr" style="display:none" title="Open the submitted PR or merge request for this branch">${ic.openExternal}<span>Open Existing PR</span></button>
+      <button class="btn btn-secondary" id="btn-open-inbox" title="List open PRs or merge requests for this repository">${ic.preview}<span>Inbox</span></button>
+      <button class="btn btn-secondary" id="btn-open-issues" title="Create a branch or draft from an issue">${ic.preview}<span>Seed Issue</span></button>
+    </div>
+    <button class="btn btn-danger" id="btn-clear-pr" style="display:none" title="Clear generated draft output and sidebar state">${ic.clear}<span>Reset</span></button>
+  </div>
+
+  <!-- Activity / progress -->
   <div class="activity-area" id="activity-area">
     <div class="activity-running" id="activity-running" style="display:none">
       <div class="spinner"></div>
@@ -499,14 +529,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 <div id="preview-view" style="display:none">
   <div class="preview-header">
-    <button class="btn-back" id="btn-back">${ic.back}<span>Back</span></button>
+    <button class="btn-back" id="btn-back" title="Return to the main sidebar">${ic.back}<span>Back</span></button>
     <span class="preview-header-title" id="preview-header-title">PR Body</span>
   </div>
   <div class="preview-actions" id="preview-actions">
-    <button class="btn-preview-action" id="btn-preview-copy-title" style="display:none">${ic.copy}<span>Copy Title</span></button>
-    <button class="btn-preview-action" id="btn-preview-copy-body">${ic.copy}<span>Copy Body</span></button>
-    <button class="btn-preview-action btn-preview-draft" id="btn-preview-draft" style="display:none">${ic.draft}<span id="btn-preview-draft-label">Submit Draft</span></button>
-    <button class="btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none">${ic.submit}<span id="btn-preview-submit-label">Submit PR</span></button>
+    <button class="btn-preview-action" id="btn-preview-copy-title" style="display:none" title="Copy the generated title">${ic.copy}<span>Copy Title</span></button>
+    <button class="btn-preview-action" id="btn-preview-copy-body" title="Copy the generated body">${ic.copy}<span>Copy Body</span></button>
+    <button class="btn-preview-action btn-preview-draft" id="btn-preview-draft" style="display:none" title="Create or update a draft PR">${ic.draft}<span id="btn-preview-draft-label">Submit Draft</span></button>
+    <button class="btn-preview-action btn-preview-submit" id="btn-preview-submit" style="display:none" title="Submit or update the PR">${ic.submit}<span id="btn-preview-submit-label">Submit PR</span></button>
   </div>
   <div class="gh-pr-title-bar" id="gh-pr-title-bar" style="display:none">
     <div class="gh-pr-title-bar-label">PR Title</div>
@@ -517,7 +547,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="regen-label">${ic.review}<span>Refine this draft — tell the AI what to change</span></div>
     <div class="regen-input-row">
       <input class="regen-input" id="regen-input" type="text" placeholder="e.g. make the summary shorter, add a Testing section…">
-      <button class="btn-regen" id="btn-regen">${ic.sync}<span>Refine</span></button>
+      <button class="btn-regen" id="btn-regen" title="Regenerate the draft using your instruction">${ic.sync}<span>Refine</span></button>
     </div>
   </div>
 </div>
@@ -638,6 +668,36 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     status.textContent = '';
   }
 
+  function updateWorkflowHint(state, noAuth, noFeatureBranch, hasSubmittedPr, hasOpenPr) {
+    const hint = el('workflow-hint');
+    const text = el('workflow-hint-text');
+    let message = '';
+
+    if (!state.configExists) {
+      message = 'Initialize the project config to tailor generation and submission for this repo.';
+    } else if (noFeatureBranch) {
+      message = 'Switch to a feature branch first so PR Forge can generate a draft safely.';
+    } else if (!noAuth && !state.providerKeySet) {
+      message = 'No API key configured. Generate PR Body still works in template mode; Set API Key unlocks AI descriptions and review.';
+    } else if (!state.bodyExists) {
+      message = 'Generate PR Body first. That unlocks submit, refine, and preview actions.';
+    } else if (!hasSubmittedPr && !hasOpenPr) {
+      message = 'Draft ready. Submit PR when you want to open or update the remote PR.';
+    } else if (hasSubmittedPr) {
+      message = state.readinessState === 'ready'
+        ? 'PR is submitted and ready. Review threads or open the PR in your browser.'
+        : 'PR is submitted. Check readiness, review threads, or post the latest review.';
+    }
+
+    if (message) {
+      hint.style.display = '';
+      text.textContent = message;
+    } else {
+      hint.style.display = 'none';
+      text.textContent = '';
+    }
+  }
+
   function applyState(state) {
     currentState = state;
     switchView(state.viewMode || 'tools');
@@ -660,10 +720,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('no-key-banner').style.display = (!noAuth && !state.providerKeySet && state.configExists) ? '' : 'none';
     el('settings-group').style.display = state.configExists ? '' : 'none';
     const hasSubmittedPr = !!state.submittedPrNumber;
+    const hasOpenPr = !!(state.existingPrNumber || state.submittedPrNumber);
     el('btn-submit-pr-label').textContent = hasSubmittedPr ? 'Update PR' : 'Submit PR';
     el('btn-submit-draft-pr-label').textContent = hasSubmittedPr ? 'Update Draft PR' : 'Submit Draft PR';
     el('btn-preview-submit-label').textContent = hasSubmittedPr ? 'Update PR' : 'Submit PR';
     el('btn-preview-draft-label').textContent = hasSubmittedPr ? 'Update Draft' : 'Submit Draft';
+    updateWorkflowHint(state, noAuth, !state.currentBranch || state.currentBranch === 'HEAD' || state.currentBranch === state.baseBranch, hasSubmittedPr, hasOpenPr);
 
     if (state.availableModels && state.availableModels.length > 0) {
       const sel = el('model-select');

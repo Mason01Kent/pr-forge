@@ -13,12 +13,19 @@ body {
   line-height: 1.4;
 }
 
+#tools-view {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 10px;
+}
+
 /* ── Header ──────────────────────────────────── */
 .header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 12px 2px;
   border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, rgba(127,127,127,0.2));
 }
 
@@ -45,6 +52,7 @@ body {
 .card {
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.2));
   padding: 0 clamp(6px, 4vw, 12px);
+  margin: 0 10px;
 }
 
 .card-row {
@@ -110,11 +118,40 @@ body {
 /* ── No-key banner ───────────────────────────── */
 .no-key-banner {
   padding: 8px 12px;
+  margin: 0 10px;
   font-size: 11px;
   line-height: 1.5;
   color: var(--vscode-editorWarning-foreground, #cca700);
   background: rgba(204, 167, 0, 0.08);
   border-bottom: 1px solid rgba(204, 167, 0, 0.25);
+  border-radius: 8px;
+}
+
+.workflow-hint {
+  margin: 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.2));
+  border-left: 3px solid var(--vscode-button-background);
+  border-radius: 8px;
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.06));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workflow-hint-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.75;
+}
+
+.workflow-hint-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--vscode-foreground);
 }
 
 /* ── Sections ────────────────────────────────── */
@@ -122,9 +159,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px clamp(6px, 4vw, 12px);
+  padding: 9px 10px;
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.15));
   min-width: 0;
+  margin: 0 10px;
+  border-radius: 8px;
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.025));
 }
 
 .section-label {
@@ -140,6 +180,9 @@ body {
 /* ── Settings dropdown ───────────────────────── */
 .settings-group {
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.1));
+  margin: 0 10px;
+  border-radius: 8px;
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.025));
 }
 .settings-group > summary {
   list-style: none;
@@ -156,6 +199,7 @@ body {
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.1));
   cursor: pointer;
   color: var(--vscode-foreground);
+  padding: 0 10px;
 }
 .settings-summary::after {
   content: '▾';
@@ -188,6 +232,7 @@ body {
 .settings-body {
   display: flex;
   flex-direction: column;
+  padding: 0 10px 2px;
 }
 .settings-body .card-row {
   padding-left: 0;
@@ -306,8 +351,11 @@ body {
   flex-direction: column;
   gap: 6px;
   padding: 8px 12px;
+  margin: 0 10px;
   font-size: 12px;
   border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.15));
+  border-radius: 8px;
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.025));
 }
 
 .activity-area.show {
@@ -337,6 +385,7 @@ body {
 
 .generated-content-card {
   gap: 6px;
+  margin: 0 10px;
 }
 
 .generated-content-summary {

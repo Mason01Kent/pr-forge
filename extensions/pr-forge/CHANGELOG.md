@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.8
+
+### Changed
+- Refined the sidebar into a more guided workflow with clearer action grouping, state-aware submit labels, and more tooltips.
+- Tightened the preview panel layout so PR body and review output read more like structured documents.
+- Updated the README install reference and release packaging to match the current VSIX.
+
 All notable changes to PR Forge are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 

@@ -58,7 +58,7 @@ If you skip the API key, PR body generation falls back to a git-driven template 
 
 Download the release artifact from the repo root and install it with VS Code:
 
-`pr-forge-1.5.7.vsix`
+`pr-forge-1.5.8.vsix`
 
 Use the VS Code command palette and run `Extensions: Install from VSIX...`.
 

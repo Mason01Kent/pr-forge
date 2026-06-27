@@ -121,6 +121,9 @@ export class PreviewPanel {
         const isPrBody = this._content.kind === 'prBody';
         const title = isPrBody ? 'PR Body' : 'PR Review';
         const timestamp = this._content.timestamp;
+        const panelHint = isPrBody
+            ? 'Ready to review before submission'
+            : 'Ready to copy into a review comment';
 
         // Build toolbar right buttons
         let toolbarRightHtml = '';
@@ -129,15 +132,15 @@ export class PreviewPanel {
             const submitLabel = hasSubmittedPr ? 'Update PR' : 'Submit PR';
             const draftLabel = hasSubmittedPr ? 'Update Draft' : 'Submit Draft';
             toolbarRightHtml = `
-                <button class="btn btn-secondary" id="btn-copy-title">Copy Title</button>
-                <button class="btn btn-secondary" id="btn-copy-body">Copy Body</button>
-                <button class="btn btn-secondary" id="btn-open-editor">Open in Editor</button>
-                <button class="btn btn-draft-pr" id="btn-submit-draft">${draftLabel}</button>
-                <button class="btn btn-submit-pr" id="btn-submit-pr">${submitLabel}</button>`;
+                <button class="btn btn-secondary" id="btn-copy-title" title="Copy the generated PR title to the clipboard">Copy Title</button>
+                <button class="btn btn-secondary" id="btn-copy-body" title="Copy the generated PR body to the clipboard">Copy Body</button>
+                <button class="btn btn-secondary" id="btn-open-editor" title="Open the rendered markdown file in the editor">Open in Editor</button>
+                <button class="btn btn-draft-pr" id="btn-submit-draft" title="Submit or update the draft PR">${draftLabel}</button>
+                <button class="btn btn-submit-pr" id="btn-submit-pr" title="Submit or update the PR">${submitLabel}</button>`;
         } else {
             toolbarRightHtml = `
-                <button class="btn btn-secondary" id="btn-copy-review">Copy Review</button>
-                <button class="btn btn-secondary" id="btn-open-editor">Open in Editor</button>`;
+                <button class="btn btn-secondary" id="btn-copy-review" title="Copy the generated review text to the clipboard">Copy Review</button>
+                <button class="btn btn-secondary" id="btn-open-editor" title="Open the rendered markdown file in the editor">Open in Editor</button>`;
         }
 
         // Build content area — GitHub-style PR preview
@@ -148,40 +151,49 @@ export class PreviewPanel {
             const baseBranch = this._content.baseBranch || 'base';
             const bodyHtml = renderMarkdown(this._content.body);
             contentHtml = `
-                <div class="gh-pr-header">
-                    <div class="gh-pr-title-row">
-                        <h1 class="gh-pr-title">${escapeHtml(prTitle)}</h1>
-                    </div>
-                    <div class="gh-pr-meta">
-                        <span class="gh-pr-status">✨ Want to merge</span>
-                        <span class="gh-pr-branch">
-                            <span class="gh-branch-icon">⎇</span>
-                            <span class="gh-branch-name current">${escapeHtml(headBranch)}</span>
-                            <span class="gh-arrow">→</span>
-                            <span class="gh-branch-name base">${escapeHtml(baseBranch)}</span>
-                        </span>
-                    </div>
-                </div>
-                <div class="gh-comment-box">
-                    <div class="gh-comment-header">
-                        <div class="gh-comment-author-avatar">⬡</div>
-                        <div class="gh-comment-author-info">
-                            <strong>PR Forge</strong> generated this PR description
+                <div class="preview-section">
+                    <div class="section-label">Pull Request Summary</div>
+                    <div class="gh-pr-header">
+                        <div class="gh-pr-title-row">
+                            <h1 class="gh-pr-title">${escapeHtml(prTitle)}</h1>
+                        </div>
+                        <div class="gh-pr-meta">
+                            <span class="gh-pr-status">✨ Want to merge</span>
+                            <span class="gh-pr-branch">
+                                <span class="gh-branch-icon">⎇</span>
+                                <span class="gh-branch-name current">${escapeHtml(headBranch)}</span>
+                                <span class="gh-arrow">→</span>
+                                <span class="gh-branch-name base">${escapeHtml(baseBranch)}</span>
+                            </span>
                         </div>
                     </div>
-                    <div class="gh-comment-body markdown-body">${bodyHtml}</div>
+                </div>
+                <div class="preview-section">
+                    <div class="section-label">Rendered Description</div>
+                    <div class="gh-comment-box">
+                        <div class="gh-comment-header">
+                            <div class="gh-comment-author-avatar">⬡</div>
+                            <div class="gh-comment-author-info">
+                                <strong>PR Forge</strong> generated this PR description
+                            </div>
+                        </div>
+                        <div class="gh-comment-body markdown-body">${bodyHtml}</div>
+                    </div>
                 </div>`;
         } else {
             const bodyHtml = renderMarkdown(this._content.body);
             contentHtml = `
-                <div class="gh-comment-box">
-                    <div class="gh-comment-header">
-                        <div class="gh-comment-author-avatar">✦</div>
-                        <div class="gh-comment-author-info">
-                            <strong>PR Forge</strong> — Code Review
+                <div class="preview-section">
+                    <div class="section-label">Rendered Review</div>
+                    <div class="gh-comment-box">
+                        <div class="gh-comment-header">
+                            <div class="gh-comment-author-avatar">✦</div>
+                            <div class="gh-comment-author-info">
+                                <strong>PR Forge</strong> — Code Review
+                            </div>
                         </div>
+                        <div class="gh-comment-body markdown-body">${bodyHtml}</div>
                     </div>
-                    <div class="gh-comment-body markdown-body">${bodyHtml}</div>
                 </div>`;
         }
 
@@ -200,7 +212,10 @@ export class PreviewPanel {
 <body>
   <div class="toolbar">
     <div class="toolbar-left">
-      <span class="panel-title">${escapeHtml(title)}</span>
+      <div class="panel-title-group">
+        <span class="panel-title">${escapeHtml(title)}</span>
+        <span class="panel-hint">${escapeHtml(panelHint)}</span>
+      </div>
       <span class="timestamp">${escapeHtml(timestamp)}</span>
     </div>
     <div class="toolbar-right">
@@ -209,7 +224,9 @@ export class PreviewPanel {
   </div>
 
   <div class="content-area">
-    ${contentHtml}
+    <div class="content-shell">
+      ${contentHtml}
+    </div>
   </div>
 
 <script nonce="${nonce}">
