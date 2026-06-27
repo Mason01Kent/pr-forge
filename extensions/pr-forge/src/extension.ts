@@ -317,6 +317,18 @@ async function refreshWorkspaceState(): Promise<void> {
             scmHost: null,
             existingPrNumber: null,
             existingPrUrl: null,
+            // Reset all PR submission / readiness state so stale values
+            // from a previous session don't bleed into a fresh workspace state.
+            submittedPrNumber: null,
+            submittedPrUrl: null,
+            submittedPrDraft: false,
+            submittedPrTimestamp: null,
+            readinessState: null,
+            readinessSummary: null,
+            readinessBlockers: [],
+            readinessInfo: [],
+            readinessUpdatedAt: null,
+            viewMode: 'tools',
         });
         return;
     }
