@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.5
+
+### Fixed
+- Removed a stray bit of text and a tiny clickable "white dash" that leaked in above the PR FORGE header. The Content-Security-Policy ignored inline `style="display:none"` attributes, so an off-screen compatibility block (a workflow hint and a hidden duplicate API-key button) rendered visibly. The block is now hidden via the stylesheet, and `style-src` permits inline styles so the remaining hidden sections no longer flash on load.
+
 ## 1.6.4
 
 ### Changed
