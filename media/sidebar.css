@@ -4,6 +4,13 @@
   padding: 0;
 }
 
+/* Off-screen compatibility elements kept only so JS lookups never hit null.
+   Hidden via stylesheet so it works even under a strict CSP that ignores
+   inline style attributes. */
+.compat-hidden {
+  display: none !important;
+}
+
 body {
   background: transparent;
   color: var(--vscode-foreground);

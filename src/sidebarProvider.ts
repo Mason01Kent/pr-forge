@@ -373,7 +373,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none';
-                 style-src ${webview.cspSource};
+                 style-src ${webview.cspSource} 'unsafe-inline';
                  script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${cssUri}">
@@ -382,8 +382,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 <body>
 <div id="tools-view">
 
-  <!-- Hidden elements kept for JS / state compatibility -->
-  <div style="display:none" aria-hidden="true">
+  <!-- Hidden elements kept for JS / state compatibility.
+       Hidden via a stylesheet class, NOT an inline style attribute:
+       the CSP (style-src without 'unsafe-inline') ignores inline style
+       attributes, so this wrapper would otherwise render visibly. -->
+  <div class="compat-hidden" aria-hidden="true">
     <div id="last-run-row"><span id="last-run-info"></span></div>
     <div id="generated-title-row"><span id="generated-title-text"></span></div>
     <div id="readiness-summary-row"><span id="readiness-summary"></span></div>
