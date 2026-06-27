@@ -24,7 +24,7 @@ export async function deleteApiKey(context: vscode.ExtensionContext, provider: s
 
 export async function promptSetApiKey(
   context: vscode.ExtensionContext,
-  _preselectedProvider?: string
+  preselectedProvider?: string
 ): Promise<string | undefined> {
   const providerEntries = Object.entries(PROVIDERS);
 
@@ -36,7 +36,15 @@ export async function promptSetApiKey(
     detail: info.noAuth ? undefined : info.baseUrl,
     provider: id,
     noAuth: info.noAuth,
-  }));
+  })).sort((a, b) => {
+    if (preselectedProvider && a.provider === preselectedProvider) {
+      return -1;
+    }
+    if (preselectedProvider && b.provider === preselectedProvider) {
+      return 1;
+    }
+    return a.label.localeCompare(b.label);
+  });
 
   const picked = await vscode.window.showQuickPick(items, {
     placeHolder: 'Select an AI provider',

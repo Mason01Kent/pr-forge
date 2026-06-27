@@ -411,6 +411,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <span class="workflow-hint-text" id="workflow-hint-text"></span>
   </div>
 
+  <div class="no-key-banner no-key-banner-top" id="no-key-cta" style="display:none">
+    <div class="no-key-copy">
+      <strong>No AI key configured.</strong> Add one now to unlock AI-generated PR bodies and reviews. You can still generate a template PR body without a key.
+    </div>
+    <div class="no-key-actions">
+      <button class="btn btn-primary btn-inline" id="btn-set-key-top" title="Add or change the configured API key">Set API Key</button>
+      <button class="btn btn-secondary btn-inline" id="btn-init-config-top" title="Create or refresh the project config file">Init Config</button>
+    </div>
+  </div>
+
   <!-- 3. Primary actions -->
   <div class="section">
     <button class="btn btn-primary" id="btn-pr-body" title="Generate or refresh the PR body from git history">${ic.body}<span id="btn-pr-body-label">Generate PR Body</span></button>
@@ -478,7 +488,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <div class="section" id="section-pr-actions" style="display:none">
     <div class="btn-row">
       <button class="btn btn-secondary" id="btn-open-github" style="display:none" title="Open the submitted PR in your browser">${ic.openExternal}<span>Open PR</span></button>
-      <button class="btn btn-danger" id="btn-merge-pr" style="display:none" title="Open the live PR page and review merge risks before continuing">${ic.submit}<span>Merge PR</span></button>
+      <button class="btn btn-primary" id="btn-merge-pr" style="display:none" title="Open the live PR page and review merge risks before continuing">${ic.submit}<span>Merge PR</span></button>
       <button class="btn btn-secondary" id="btn-refresh-readiness" title="Re-check merge readiness and checks">${ic.review}<span>Check Readiness</span></button>
     </div>
     <div class="btn-row">
@@ -504,21 +514,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     </div>
   </div>
 
-  <!-- 8. Setup + low-frequency actions -->
-  <div class="section section-setup">
-    <span class="section-label">Setup</span>
-    <div class="btn-row">
-      <button class="btn btn-ghost" id="btn-set-key" title="Add or change the configured API key">Set API Key</button>
-      <button class="btn btn-ghost" id="btn-init-config" title="Create or refresh the project config file">Init Config</button>
-      <button class="btn btn-ghost" id="btn-open-config" title="Open the project config file">Open Config</button>
+  <!-- 8. Setup + low-frequency actions (collapsed by default) -->
+  <details class="section section-setup setup-details">
+    <summary class="setup-summary">
+      <span class="section-label">Setup &amp; Tools</span>
+      <span class="setup-summary-chevron">▸</span>
+    </summary>
+    <div class="setup-body">
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btn-set-key" title="Add or change the configured API key">Set API Key</button>
+        <button class="btn btn-ghost" id="btn-init-config" title="Create or refresh the project config file">Init Config</button>
+        <button class="btn btn-ghost" id="btn-open-config" title="Open the project config file">Open Config</button>
+      </div>
+      <div class="btn-row setup-extras">
+        <button class="btn btn-secondary" id="btn-open-existing-pr" style="display:none" title="Open the submitted PR or merge request for this branch">${ic.openExternal}<span>Open Existing PR</span></button>
+        <button class="btn btn-secondary" id="btn-open-inbox" title="List open PRs or merge requests for this repository">${ic.preview}<span>Inbox</span></button>
+        <button class="btn btn-secondary" id="btn-open-issues" title="Create a branch or draft from an issue">${ic.preview}<span>Seed Issue</span></button>
+      </div>
+      <button class="btn btn-danger" id="btn-clear-pr" style="display:none" title="Clear generated draft output and sidebar state">${ic.clear}<span>Reset</span></button>
     </div>
-    <div class="btn-row setup-extras">
-      <button class="btn btn-secondary" id="btn-open-existing-pr" style="display:none" title="Open the submitted PR or merge request for this branch">${ic.openExternal}<span>Open Existing PR</span></button>
-      <button class="btn btn-secondary" id="btn-open-inbox" title="List open PRs or merge requests for this repository">${ic.preview}<span>Inbox</span></button>
-      <button class="btn btn-secondary" id="btn-open-issues" title="Create a branch or draft from an issue">${ic.preview}<span>Seed Issue</span></button>
-    </div>
-    <button class="btn btn-danger" id="btn-clear-pr" style="display:none" title="Clear generated draft output and sidebar state">${ic.clear}<span>Reset</span></button>
-  </div>
+  </details>
 
   <!-- Activity / progress -->
   <div class="activity-area" id="activity-area">
@@ -535,7 +550,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 <div id="preview-view" style="display:none">
   <div class="preview-header">
-    <button class="btn-back" id="btn-back" title="Return to the main sidebar">${ic.back}<span>Back</span></button>
+    <button class="btn-back" id="btn-back" title="Return to the main sidebar">${ic.back}<span>Tools</span></button>
     <span class="preview-header-title" id="preview-header-title">PR Body</span>
   </div>
   <div class="preview-actions" id="preview-actions">
@@ -566,10 +581,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-merge-pr','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-set-key-top','btn-init-config','btn-init-config-top','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-merge-pr','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
+  el('btn-set-key-top').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
+  el('btn-init-config-top').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
   el('btn-open-config').addEventListener('click', () => vscode.postMessage({ command: 'openConfig' }));
   el('btn-pr-body').addEventListener('click', () => vscode.postMessage({ command: 'generatePrBody' }));
   el('btn-pr-review').addEventListener('click', () => vscode.postMessage({ command: 'generatePrReview' }));
@@ -725,6 +742,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     keyBadge.textContent = noAuth ? 'Not needed' : (state.providerKeySet ? 'Set ✓' : 'Not set');
     keyBadge.className = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
     el('no-key-banner').style.display = (!noAuth && !state.providerKeySet && state.configExists) ? '' : 'none';
+    el('no-key-cta').style.display = (!noAuth && !state.providerKeySet) ? 'flex' : 'none';
     el('settings-group').style.display = state.configExists ? '' : 'none';
     const hasSubmittedPr = !!state.submittedPrNumber;
     const hasOpenPr = !!(state.existingPrNumber || state.submittedPrNumber);
