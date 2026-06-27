@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.11
+
+### Fixed
+- **Submission and base branch checks now follow the actual repo default branch** - PR Forge no longer assumes `main` when the repository uses a different default branch such as `master`, so generate and submit flows stay aligned with the remote.
+- **Sidebar screenshot added to README** - the demo section now includes the live sidebar image, with the remaining placeholders called out explicitly.
+
 ## 1.6.10
 
 ### Fixed
