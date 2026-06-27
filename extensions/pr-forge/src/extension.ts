@@ -9,7 +9,7 @@ import { generatePr, regeneratePr, clearDiffCache, generateInlineFindings, getFi
 import { mapFindingsToComments, findingsToFallbackComment } from './reviewComments';
 import { PrForgeConfig, migrateConfig } from './config';
 import { PROVIDERS, DEFAULT_MODELS, UsageStats, listModels } from './llmClient';
-import { getApiKey, hasApiKey, promptSetApiKey } from './secretsManager';
+import { getApiKey, hasApiKey, storeApiKey, promptSetApiKey } from './secretsManager';
 import { parseRemote, IssueItem, ReviewThread, ExistingPrSummary } from './scm/index';
 import { buildPrSnapshotDocument, isDuplicatePrSubmitError } from './submitFlow';
 import { initTelemetry, disposeTelemetry, telemetryEvent, telemetryError, classifyError } from './telemetry';
@@ -296,9 +296,12 @@ async function refreshWorkspaceState(): Promise<void> {
     }
     const cfg = readConfig(wf);
     if (!cfg) {
+        const current = provider.getState();
         provider.updateState({
             configExists: false,
             projectName: wf.name,
+            provider: current.provider,
+            providerKeySet: current.providerKeySet,
             currentBranch: getCurrentBranch(wf.uri.fsPath),
             baseBranch: null,
             titleExists: false,
@@ -513,7 +516,7 @@ async function clearPrOutput(): Promise<void> {
     log('PR draft cleared.');
 }
 
-async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder): Promise<void> {
+async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder, chosenProvider?: string): Promise<void> {
     const configPath = getConfigPath(workspaceFolder);
     if (fs.existsSync(configPath)) {
         const overwrite = await vscode.window.showWarningMessage(`${CONFIG_FILE_NAME} already exists. Overwrite?`, 'Yes', 'No');
@@ -564,7 +567,7 @@ async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder):
         testCommand: testCommands[projectType] || '', runTestsOnGenerate: true, includeRecentCommits: false,
         includeCommitSummaries: false, includeFileWalkthrough: false, reReviewOnPush: false,
         outputDirectory: '.pr',
-        provider: 'deepseek', defaultModel: 'deepseek-chat',
+        provider: chosenProvider ?? 'deepseek', defaultModel: DEFAULT_MODELS[chosenProvider ?? 'deepseek'] ?? 'deepseek-chat',
         reviewRulesFiles, templateFiles,
         prLabels: [], prReviewers: [], prAssignees: [], prMilestone: '',
         prRiskAreas,
@@ -849,24 +852,99 @@ async function regeneratePrBodyWithInstruction(instruction: string): Promise<voi
     provider.notifyRunEnd('prBody', success);
 }
 
+async function runSetupWizard(wf: vscode.WorkspaceFolder): Promise<void> {
+    const providerEntries = Object.entries(PROVIDERS);
+
+    type WizardItem = vscode.QuickPickItem & { provider: string | null; noAuth: boolean };
+    const items: WizardItem[] = [
+        { label: 'Skip (no API key)', description: 'Generate template PR bodies without AI', provider: null, noAuth: true },
+        ...providerEntries.map(([id, info]) => ({
+            label: info.displayName,
+            description: info.noAuth ? '(no key needed)' : '',
+            detail: info.noAuth ? undefined : info.baseUrl,
+            provider: id,
+            noAuth: info.noAuth,
+        })),
+    ];
+
+    const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Choose an AI provider (or skip to use template mode)' });
+    if (!picked) return;
+
+    let resolvedProvider: string | null = picked.provider;
+    let keyStored = false;
+
+    if (picked.provider !== null && !picked.noAuth) {
+        const key = await vscode.window.showInputBox({
+            prompt: `Enter your API key for ${picked.label} (or leave empty to skip)`,
+            password: true,
+            placeHolder: 'Paste your API key — press Escape or leave blank to skip',
+            ignoreFocusOut: true,
+        });
+        if (key === undefined) return; // user pressed Escape
+        if (key.trim() !== '') {
+            await storeApiKey(extensionContext, picked.provider, key.trim());
+            keyStored = true;
+        } else {
+            resolvedProvider = null; // no key provided — fall back to template mode
+        }
+    } else if (picked.provider !== null && picked.noAuth) {
+        await storeApiKey(extensionContext, picked.provider, '');
+        keyStored = true;
+    }
+
+    await initializeProjectConfig(wf, resolvedProvider ?? undefined);
+
+    const cfg = readConfig(wf);
+    if (cfg) {
+        const keySet = resolvedProvider !== null && await hasApiKey(extensionContext, resolvedProvider);
+        provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: !!keySet });
+        void refreshWorkspaceState();
+    }
+
+    const keyMsg = keyStored && resolvedProvider ? `, ${PROVIDERS[resolvedProvider]?.displayName ?? resolvedProvider} key saved` : ' — no API key set, template mode active';
+    vscode.window.showInformationMessage(`PR Forge ready — config created${keyMsg}`);
+    telemetryEvent('setupWizard', { provider: resolvedProvider ?? 'none', keyStored: String(keyStored) });
+}
+
 async function setApiKey(): Promise<void> {
     const wf = await resolveTargetProjectFolder();
     const config = wf ? readConfig(wf) : null;
-    const result = await promptSetApiKey(extensionContext, config?.provider);
-    if (result && wf && config) {
+    // No config yet — use the guided wizard instead of just prompting for a key
+    if (wf && !config) {
+        await runSetupWizard(wf);
+        return;
+    }
+    const currentProvider = provider.getState().provider ?? undefined;
+    const result = await promptSetApiKey(extensionContext, config?.provider ?? currentProvider);
+    if (!result) {
+        return;
+    }
+
+    const keySet = await hasApiKey(extensionContext, result);
+    provider.updateState({ provider: result, providerKeySet: keySet });
+
+    if (wf && config) {
         // Persist the chosen provider (and its default model) so generation
         // actually uses the provider the user just configured a key for.
         if (config.provider !== result) {
-            config.provider = result;
-            config.defaultModel = DEFAULT_MODELS[result] || config.defaultModel;
-            writeConfig(wf, config);
-            log(`Provider switched to ${result} (model: ${config.defaultModel}).`);
+            const providerName = PROVIDERS[result]?.displayName ?? result;
+            const confirm = await vscode.window.showWarningMessage(
+                `Update ${CONFIG_FILE_NAME} to use ${providerName}?`,
+                'Yes', 'No'
+            );
+            if (confirm === 'Yes') {
+                config.provider = result;
+                config.defaultModel = DEFAULT_MODELS[result] || config.defaultModel;
+                writeConfig(wf, config);
+                log(`Provider switched to ${result} (model: ${config.defaultModel}).`);
+            }
         }
-        const keySet = await hasApiKey(extensionContext, result);
-        provider.updateState({ provider: result, providerKeySet: keySet });
-        telemetryEvent('setApiKey', { provider: result });
+        void refreshWorkspaceState();
+    } else {
         void refreshWorkspaceState();
     }
+
+    telemetryEvent('setApiKey', { provider: result });
 }
 
 async function submitDraftPr(): Promise<void> {
@@ -2269,15 +2347,19 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         onInitConfig: async () => {
             const wf = await resolveTargetProjectFolder();
-            if (wf) {
-                await initializeProjectConfig(wf);
+            if (!wf) return;
+            const existingConfig = readConfig(wf);
+            if (!existingConfig) {
+                // No config yet — run the guided wizard (provider + key + config in one flow)
+                await runSetupWizard(wf);
+            } else {
+                // Config exists — just re-init (user will be asked to confirm overwrite)
+                await initializeProjectConfig(wf, existingConfig.provider);
                 const cfg = readConfig(wf);
                 if (cfg) {
                     const keySet = await hasApiKey(context, cfg.provider);
                     provider.updateState({ configExists: true, projectName: cfg.projectName, provider: cfg.provider, providerKeySet: keySet });
                     void refreshWorkspaceState();
-                } else {
-                    provider.updateState({ configExists: false, projectName: wf.name });
                 }
             }
         },
