@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.9
+
+### Fixed
+- **Looping "Posting review…" notification** — the progress spinner now dismisses as soon as the network call finishes. The "Open in Browser" toast appears once after, instead of keeping the spinner up indefinitely.
+- **Readiness shows "Draft" instead of "Blocked"** when the only reason a PR isn't mergeable is that it's marked as a draft. A hover tooltip explains exactly why and what to do. Genuine blockers (failing CI, conflicts, changes requested) still show "Blocked" with a tooltip listing them.
+- **"Open Existing PR" is now hidden** when no open PR exists for the current branch, instead of showing and doing nothing when clicked.
+- **"View Body" and "View Review" buttons restored** — a "PR Content" card now appears in the sidebar whenever content has been generated, giving you one-click access to re-open the rendered preview panel after closing it.
+
+### Added
+- **Tooltips on every control** — every button, checkbox, dropdown, and status badge now has a plain-language hover tooltip explaining what it does, so new users don't have to guess.
+
 ## 1.6.8
 
 ### Fixed

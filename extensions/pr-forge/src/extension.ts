@@ -2173,23 +2173,29 @@ async function postReviewToPr(): Promise<void> {
 
     const commentBody = `${review}\n\n---\n_Posted by [PR Forge](https://github.com/Mason01Kent/pr-forge)._`;
 
-    await vscode.window.withProgress(
+    type ReviewResult = { kind: 'ok'; url: string } | { kind: 'error'; msg: string };
+    const result = await vscode.window.withProgress<ReviewResult>(
         { location: vscode.ProgressLocation.Notification, title: `PR Forge: Posting review to PR #${prNumber}...`, cancellable: false },
         async () => {
             try {
                 const { url } = await remote.provider.postPrComment({ owner: remote.owner, repo: remote.repo, number: prNumber, body: commentBody });
                 log(`Review posted to PR #${prNumber}: ${url}`);
                 telemetryEvent('postReview', { outcome: 'success' });
-                const open = await vscode.window.showInformationMessage(`Review posted to PR #${prNumber}.`, 'Open in Browser');
-                if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(url)); }
+                return { kind: 'ok' as const, url };
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 log(`Review post failed: ${msg}`);
                 telemetryError('postReview', { outcome: 'error', errorKind: classifyError(err) });
-                vscode.window.showErrorMessage(`PR Forge: Could not post review — ${msg}`);
+                return { kind: 'error' as const, msg };
             }
         }
     );
+    if (result.kind === 'ok') {
+        const open = await vscode.window.showInformationMessage(`Review posted to PR #${prNumber}.`, 'Open in Browser');
+        if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(result.url)); }
+    } else {
+        vscode.window.showErrorMessage(`PR Forge: Could not post review — ${result.msg}`);
+    }
 }
 
 async function postInlineReview(): Promise<void> {
@@ -2270,7 +2276,13 @@ async function postInlineReview(): Promise<void> {
         : '_PR Forge inline review._';
 
     const t0 = Date.now();
-    await vscode.window.withProgress(
+    type InlineResult =
+        | { kind: 'ok'; url: string; count: number }
+        | { kind: 'fallback'; url: string; count: number }
+        | { kind: 'info'; msg: string }
+        | { kind: 'error'; msg: string }
+        | { kind: 'cancelled' };
+    const inlineResult = await vscode.window.withProgress<InlineResult>(
         { location: vscode.ProgressLocation.Notification, title: `PR Forge: Posting inline review to PR #${prNumber}...`, cancellable: true },
         async (_progress, progressToken) => {
             const abort = new AbortController();
@@ -2278,13 +2290,11 @@ async function postInlineReview(): Promise<void> {
             try {
                 const fileDiffs = getFileDiffs(cwd, config.baseBranch);
                 if (fileDiffs.length === 0) {
-                    vscode.window.showInformationMessage('PR Forge: No diff against the base branch to review.');
-                    return;
+                    return { kind: 'info' as const, msg: 'PR Forge: No diff against the base branch to review.' };
                 }
                 const findings = await generateInlineFindings({ provider: config.provider, apiKey, model: config.defaultModel }, fileDiffs, config.projectName, log, abort.signal);
                 if (findings.length === 0) {
-                    vscode.window.showInformationMessage('PR Forge: The model reported no inline findings.');
-                    return;
+                    return { kind: 'info' as const, msg: 'PR Forge: The model reported no inline findings.' };
                 }
                 const { comments, dropped } = mapFindingsToComments(findings, fileDiffs);
                 if (dropped > 0) { log(`Dropped ${dropped} finding(s) that did not map to a commentable diff line.`); }
@@ -2295,25 +2305,33 @@ async function postInlineReview(): Promise<void> {
                     const { url } = await remote.provider.createReview({ owner: remote.owner, repo: remote.repo, number: prNumber, body: summaryBody + footer, comments });
                     log(`Inline review posted to PR #${prNumber} (${comments.length} comment(s)): ${url}`);
                     telemetryEvent('postInlineReview', { outcome: 'success' }, { durationMs: Date.now() - t0, comments: comments.length, dropped });
-                    const open = await vscode.window.showInformationMessage(`Inline review posted to PR #${prNumber} (${comments.length} comment(s)).`, 'Open in Browser');
-                    if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(url)); }
+                    return { kind: 'ok' as const, url, count: comments.length };
                 } catch (reviewErr: unknown) {
-                    // Graceful fallback: post the findings as one combined comment.
                     log(`Inline review failed (${reviewErr instanceof Error ? reviewErr.message : String(reviewErr)}); falling back to a single comment.`);
                     const { url } = await remote.provider.postPrComment({ owner: remote.owner, repo: remote.repo, number: prNumber, body: findingsToFallbackComment(findings) + footer });
                     telemetryEvent('postInlineReview', { outcome: 'fallback' }, { durationMs: Date.now() - t0, comments: comments.length, dropped });
-                    const open = await vscode.window.showInformationMessage(`Posted review findings as a single comment on PR #${prNumber} (inline anchoring unavailable).`, 'Open in Browser');
-                    if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(url)); }
+                    return { kind: 'fallback' as const, url, count: comments.length };
                 }
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
-                if (classifyError(err) === 'cancelled') { log('Inline review cancelled.'); return; }
+                if (classifyError(err) === 'cancelled') { log('Inline review cancelled.'); return { kind: 'cancelled' as const }; }
                 log(`Inline review failed: ${msg}`);
                 telemetryError('postInlineReview', { outcome: 'error', errorKind: classifyError(err) });
-                vscode.window.showErrorMessage(`PR Forge: Could not post inline review — ${msg}`);
+                return { kind: 'error' as const, msg };
             }
         }
     );
+    if (inlineResult.kind === 'ok') {
+        const open = await vscode.window.showInformationMessage(`Inline review posted to PR #${prNumber} (${inlineResult.count} comment(s)).`, 'Open in Browser');
+        if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(inlineResult.url)); }
+    } else if (inlineResult.kind === 'fallback') {
+        const open = await vscode.window.showInformationMessage(`Posted review findings as a single comment on PR #${prNumber} (inline anchoring unavailable).`, 'Open in Browser');
+        if (open === 'Open in Browser') { vscode.env.openExternal(vscode.Uri.parse(inlineResult.url)); }
+    } else if (inlineResult.kind === 'info') {
+        vscode.window.showInformationMessage(inlineResult.msg);
+    } else if (inlineResult.kind === 'error') {
+        vscode.window.showErrorMessage(`PR Forge: Could not post inline review — ${inlineResult.msg}`);
+    }
 }
 
 function getHeadSha(cwd: string): string | undefined {

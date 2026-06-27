@@ -53,7 +53,7 @@ export interface IssueItem {
 }
 
 export interface ReadinessSummary {
-    state: 'ready' | 'blocked' | 'unknown';
+    state: 'ready' | 'blocked' | 'draft' | 'unknown';
     summary: string;
     blockers: string[];
     info: string[];
