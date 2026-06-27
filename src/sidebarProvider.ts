@@ -35,7 +35,7 @@ export interface SidebarState {
     submittedPrUrl: string | null;
     submittedPrDraft: boolean;
     submittedPrTimestamp: string | null;
-    readinessState: 'ready' | 'blocked' | 'unknown' | null;
+    readinessState: 'ready' | 'blocked' | 'draft' | 'unknown' | null;
     readinessSummary: string | null;
     readinessBlockers: string[];
     readinessInfo: string[];
@@ -435,6 +435,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <button class="btn btn-secondary" id="btn-pr-review">${ic.review}<span id="btn-pr-review-label">Generate PR Review</span></button>
   </div>
 
+  <!-- Generated content card (shown when body or review exists) -->
+  <div class="section content-card" id="section-content" style="display:none">
+    <div class="content-card-status" id="content-card-status"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-view-body" style="display:none">${ic.preview}<span>View Body</span></button>
+      <button class="btn btn-secondary" id="btn-view-review" style="display:none">${ic.review}<span>View Review</span></button>
+    </div>
+  </div>
+
   <!-- Submit (shown when body exists) -->
   <div class="section" id="section-submit" style="display:none">
     <div class="btn-row">
@@ -446,8 +455,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <!-- Post-submit actions (shown when PR/MR exists) -->
   <div class="section" id="section-pr-actions" style="display:none">
     <div class="btn-row">
-      <button class="btn btn-secondary" id="btn-open-github" style="display:none">${ic.openExternal}<span>Open PR</span></button>
-      <button class="btn btn-primary" id="btn-merge-pr" style="display:none">${ic.submit}<span>Merge PR</span></button>
+      <button class="btn btn-secondary" id="btn-open-github" style="display:none" title="Open this pull request in your web browser.">${ic.openExternal}<span>Open PR</span></button>
+      <button class="btn btn-primary" id="btn-merge-pr" style="display:none" title="Merge this pull request into the base branch (asks for confirmation first).">${ic.submit}<span>Merge PR</span></button>
       <button class="btn btn-secondary" id="btn-refresh-readiness">${ic.review}<span>Check Readiness</span></button>
     </div>
     <div class="btn-row">
@@ -480,41 +489,41 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       <!-- Options -->
       <div class="card-row" id="model-row" style="display:none">
         <span class="label">Model</span>
-        <select class="select-model" id="model-select"></select>
+        <select class="select-model" id="model-select" title="Choose which AI model writes the PR body and review."></select>
       </div>
       <div class="card-row" id="run-tests-row" style="display:none">
         <span class="label">Run tests</span>
-        <label class="toggle"><input type="checkbox" id="chk-run-tests" checked><span class="toggle-label" id="run-tests-label">On</span></label>
+        <label class="toggle" title="Run the test command before generating and include the result in the PR body."><input type="checkbox" id="chk-run-tests" checked><span class="toggle-label" id="run-tests-label">On</span></label>
       </div>
       <div class="card-row" id="commit-row" style="display:none">
         <span class="label">Recent commits</span>
-        <label class="toggle"><input type="checkbox" id="chk-commits"><span class="toggle-label" id="commits-label">Off</span></label>
+        <label class="toggle" title="Include the list of recent commits in the PR body."><input type="checkbox" id="chk-commits"><span class="toggle-label" id="commits-label">Off</span></label>
       </div>
       <div class="card-row" id="commit-summary-row" style="display:none">
         <span class="label">Commit summaries</span>
-        <label class="toggle"><input type="checkbox" id="chk-commit-summaries"><span class="toggle-label" id="commit-summaries-label">Off</span></label>
+        <label class="toggle" title="Use AI to summarize each commit into a table in the PR body."><input type="checkbox" id="chk-commit-summaries"><span class="toggle-label" id="commit-summaries-label">Off</span></label>
       </div>
       <div class="card-row" id="file-walkthrough-row" style="display:none">
         <span class="label">File walkthrough</span>
-        <label class="toggle"><input type="checkbox" id="chk-file-walkthrough"><span class="toggle-label" id="file-walkthrough-label">Off</span></label>
+        <label class="toggle" title="Use AI to add a per-file walkthrough table to the PR body."><input type="checkbox" id="chk-file-walkthrough"><span class="toggle-label" id="file-walkthrough-label">Off</span></label>
       </div>
       <div class="card-row" id="rereview-row" style="display:none">
         <span class="label">Re-review on push</span>
-        <label class="toggle"><input type="checkbox" id="chk-rereview"><span class="toggle-label" id="rereview-label">Off</span></label>
+        <label class="toggle" title="Automatically re-run the PR review whenever you push new commits."><input type="checkbox" id="chk-rereview"><span class="toggle-label" id="rereview-label">Off</span></label>
       </div>
       <!-- Setup buttons -->
       <div class="btn-row" style="margin-top:4px">
-        <button class="btn btn-ghost" id="btn-set-key"><span id="btn-set-key-label">Set API Key</span></button>
-        <button class="btn btn-ghost" id="btn-init-config">Init Config</button>
-        <button class="btn btn-ghost" id="btn-open-config">Open Config</button>
+        <button class="btn btn-ghost" id="btn-set-key" title="Add or change the AI provider API key used to write descriptions and reviews."><span id="btn-set-key-label">Set API Key</span></button>
+        <button class="btn btn-ghost" id="btn-init-config" title="Create the project config file (.pr-forge.json) that tailors PR Forge to this repo.">Init Config</button>
+        <button class="btn btn-ghost" id="btn-open-config" title="Open the .pr-forge.json config file in the editor.">Open Config</button>
       </div>
-      <button class="btn btn-danger" id="btn-remove-key" style="display:none">${ic.clear}<span>Remove API Key</span></button>
+      <button class="btn btn-danger" id="btn-remove-key" style="display:none" title="Delete the saved API key and fall back to template mode (no AI).">${ic.clear}<span>Remove API Key</span></button>
       <div class="btn-row">
-        <button class="btn btn-secondary" id="btn-open-existing-pr" style="display:none">${ic.openExternal}<span>Open Existing PR</span></button>
+        <button class="btn btn-secondary" id="btn-open-existing-pr" style="display:none" title="Open the existing pull request for this branch on GitHub or GitLab.">${ic.openExternal}<span>Open Existing PR</span></button>
         <button class="btn btn-secondary" id="btn-open-inbox">${ic.preview}<span>Inbox</span></button>
-        <button class="btn btn-secondary" id="btn-open-issues">${ic.preview}<span>Seed Issue</span></button>
+        <button class="btn btn-secondary" id="btn-open-issues" title="Start a PR draft from an existing GitHub or GitLab issue.">${ic.preview}<span>Seed Issue</span></button>
       </div>
-      <button class="btn btn-danger" id="btn-clear-pr" style="display:none">${ic.clear}<span>Reset</span></button>
+      <button class="btn btn-danger" id="btn-clear-pr" style="display:none" title="Clear the generated PR body, review, and submission state for this branch.">${ic.clear}<span>Reset</span></button>
     </div>
   </details>
 
@@ -553,7 +562,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-set-key-top','btn-init-config','btn-init-config-top','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-merge-pr','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review','btn-remove-key','btn-onboard-primary'].map(el);
+  const allBtns = ['btn-set-key','btn-set-key-top','btn-init-config','btn-init-config-top','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-merge-pr','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review','btn-remove-key','btn-onboard-primary','btn-view-body','btn-view-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-set-key-top').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
@@ -569,6 +578,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-open-existing-pr').addEventListener('click', () => vscode.postMessage({ command: 'openExistingPr' }));
   el('btn-open-inbox').addEventListener('click', () => vscode.postMessage({ command: 'openInbox' }));
   el('btn-open-issues').addEventListener('click', () => vscode.postMessage({ command: 'openIssueFlow' }));
+  el('btn-view-body').addEventListener('click', () => vscode.postMessage({ command: 'openPreviewPanel' }));
+  el('btn-view-review').addEventListener('click', () => vscode.postMessage({ command: 'openReviewPanel' }));
   el('btn-refresh-readiness').addEventListener('click', () => vscode.postMessage({ command: 'refreshReadiness' }));
   el('btn-generated-open-body').addEventListener('click', () => vscode.postMessage({ command: 'showPreview' }));
   el('btn-generated-open-review').addEventListener('click', () => vscode.postMessage({ command: 'showReview' }));
@@ -705,9 +716,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (state.configExists) {
       badge.textContent = 'Found ✓';
       badge.className = 'badge ok';
+      badge.title = 'Project config found. Open Config in Setup & Tools to edit it.';
     } else {
       badge.textContent = 'Not found';
       badge.className = 'badge warn';
+      badge.title = 'No project config yet. Click "Set Up PR Forge" above or "Init Config" in Setup & Tools to create one.';
     }
 
     const keyBadge = el('key-badge');
@@ -715,6 +728,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const keyManaged = state.providerKeySet && !noAuth;
     keyBadge.textContent = noAuth ? 'Not needed' : (state.providerKeySet ? 'Set ✓' : 'Not set');
     keyBadge.className = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
+    keyBadge.title = noAuth
+      ? 'Ollama runs locally and does not need an API key.'
+      : (state.providerKeySet
+          ? 'AI API key is set. Use Change API Key in Setup & Tools to switch provider or update the key.'
+          : 'No AI key set — PR Forge is in template mode. Add a key via Setup & Tools to unlock AI descriptions and review. A key is optional.');
 
     // Key management lives in Setup & Tools: the Set/Change label flips with
     // state, and Remove only appears once a key is stored.
@@ -730,12 +748,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       el('onboard-text').textContent = 'Create a project config so PR Forge can tailor generation and submission. You can pick an AI provider and key now, or skip and use template mode.';
       el('btn-onboard-primary-label').textContent = 'Set Up PR Forge';
       onboardPrimary.dataset.command = 'initConfig';
+      onboardPrimary.title = 'Run the setup wizard to create a project config and optionally add an AI API key.';
       onboard.style.display = '';
     } else if (!noAuth && !state.providerKeySet) {
       el('onboard-title').textContent = 'Add an API key (optional)';
       el('onboard-text').textContent = 'PR Forge is set up and ready in template mode. Add an API key to switch on AI-written PR descriptions and code review.';
       el('btn-onboard-primary-label').textContent = 'Add API Key';
       onboardPrimary.dataset.command = 'setApiKey';
+      onboardPrimary.title = 'Choose an AI provider and paste in your API key. You can skip this — template mode works without a key.';
       onboard.style.display = '';
     } else {
       onboard.style.display = 'none';
@@ -816,9 +836,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (hasReadiness) {
       const badge = el('readiness-badge');
       const readinessState = state.readinessState || 'unknown';
-      const readinessLabel = readinessState === 'ready' ? 'Ready' : readinessState === 'blocked' ? 'Blocked' : 'Unknown';
+      const readinessLabel = readinessState === 'ready' ? 'Ready ✓' : readinessState === 'draft' ? 'Draft' : readinessState === 'blocked' ? 'Blocked' : 'Unknown';
       badge.textContent = readinessLabel;
-      badge.className = readinessState === 'ready' ? 'badge ok' : readinessState === 'blocked' ? 'badge warn' : 'badge warn';
+      badge.className = readinessState === 'ready' ? 'badge ok' : readinessState === 'draft' ? 'badge neutral' : 'badge warn';
+      // Build a plain-language tooltip from the blockers/info so beginners know what to do.
+      const tooltipLines = [];
+      if (readinessState === 'draft') {
+        tooltipLines.push("This PR is still a draft — mark it 'Ready for review' on GitHub before it can be merged.");
+      } else if (readinessState === 'blocked' && state.readinessBlockers && state.readinessBlockers.length > 0) {
+        tooltipLines.push('Cannot merge yet:');
+        state.readinessBlockers.forEach(b => tooltipLines.push('• ' + b));
+      } else if (readinessState === 'ready') {
+        tooltipLines.push('All checks passed — this PR is ready to merge.');
+      } else {
+        tooltipLines.push('Readiness is unknown. Click Check Readiness to refresh.');
+      }
+      if (state.readinessInfo && state.readinessInfo.length > 0) {
+        tooltipLines.push('');
+        state.readinessInfo.slice(0, 3).forEach(i => tooltipLines.push(i));
+      }
+      badge.title = tooltipLines.join('\n');
       el('readiness-row').style.display = '';
       if (state.readinessSummary) {
         el('readiness-summary').textContent = state.readinessSummary;
@@ -898,7 +935,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       : (state.existingPrNumber
           ? ('Update the title and body of draft ' + prTermLong + ' #' + state.existingPrNumber + '.')
           : ('Create a new draft ' + prTermLong + ' for this branch on GitHub or GitLab.'));
-    el('btn-open-existing-pr').style.display = state.configExists && !_noFeatureBranch ? '' : 'none';
+    el('btn-open-existing-pr').style.display = state.configExists && !_noFeatureBranch && !!state.existingPrNumber ? '' : 'none';
     el('btn-open-existing-pr').disabled = !!state.isRunning;
     el('btn-open-existing-pr').title = _onBaseBranch
       ? 'Switch to a feature branch first'
@@ -926,6 +963,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       : ('Submit a ' + prTermLong + ' first');
 
     const hasGeneratedContent = state.bodyExists || state.reviewExists;
+
+    // Visible content card with View Body / View Review buttons.
+    el('section-content').style.display = hasGeneratedContent ? '' : 'none';
+    el('content-card-status').textContent = hasGeneratedContent
+      ? '✓ ' + (state.generatedTitleShort || state.generatedTitle || 'PR Content') + ' · ' + (state.lastGeneratedAt || state.lastRunTimestamp || '')
+      : '';
+    el('btn-view-body').style.display = state.bodyExists ? '' : 'none';
+    el('btn-view-body').disabled = !state.bodyExists || !!state.isRunning;
+    el('btn-view-body').title = 'Open the generated PR body in a preview panel.';
+    el('btn-view-review').style.display = state.reviewExists ? '' : 'none';
+    el('btn-view-review').disabled = !state.reviewExists || !!state.isRunning;
+    el('btn-view-review').title = 'Open the generated PR review in a preview panel.';
+
     const generatedCard = el('generated-content-card');
     generatedCard.style.display = hasGeneratedContent ? 'flex' : 'none';
     const generatedStatus = el('generated-content-status');

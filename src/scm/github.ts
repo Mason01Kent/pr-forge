@@ -455,7 +455,8 @@ export class GitHubScmProvider implements ScmProvider {
             }
         }
 
-        const state = blockers.length > 0 ? 'blocked' : (info.length > 0 ? 'ready' : 'unknown');
+        const draftOnly = pr.draft === true && blockers.length > 0 && blockers.every(b => b === 'PR is marked draft');
+        const state = draftOnly ? 'draft' : (blockers.length > 0 ? 'blocked' : (info.length > 0 ? 'ready' : 'unknown'));
         const summary = blockers[0] ?? info[0] ?? 'No readiness data available';
         return { state, summary, blockers, info, updatedAt };
     }

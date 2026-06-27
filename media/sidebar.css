@@ -115,6 +115,12 @@ body {
   border: 1px solid rgba(56, 185, 92, 0.3);
 }
 
+.badge.neutral {
+  background: rgba(100, 150, 220, 0.12);
+  color: var(--vscode-textLink-foreground, #6ca0e8);
+  border: 1px solid rgba(100, 150, 220, 0.3);
+}
+
 .badge.warn {
   background: rgba(204, 167, 0, 0.12);
   color: var(--vscode-editorWarning-foreground, #cca700);
@@ -147,6 +153,16 @@ body {
   line-height: 1.4;
   color: var(--vscode-descriptionForeground);
   opacity: 0.85;
+}
+
+/* ── Generated content card ──────────────────── */
+.content-card-status {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Sections ────────────────────────────────── */
