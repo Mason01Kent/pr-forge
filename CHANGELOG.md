@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.7
+
+### Fixed
+- Generate PR Body / Generate PR Review buttons no longer say "Regenerate" when switching to a branch that has no generated content. `PR_BODY.state.json` (written by the generator) already records which branch artifacts belong to — `readGeneratedArtifacts` now reads that and treats files from a different branch as absent.
+
 ## 1.6.6
 
 ### Changed

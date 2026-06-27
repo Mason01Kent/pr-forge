@@ -130,9 +130,24 @@ function readGeneratedArtifacts(workspaceFolder: vscode.WorkspaceFolder, config:
     const bodyPath = path.join(outputDir, 'PR_BODY.md');
     const reviewPath = path.join(outputDir, 'PR_REVIEW.md');
 
-    const titleExists = fs.existsSync(titlePath);
-    const bodyExists = fs.existsSync(bodyPath);
-    const reviewExists = fs.existsSync(reviewPath);
+    // prGenerator writes PR_BODY.state.json with the branch the artifacts came from.
+    // Suppress them when on a different branch so buttons show "Generate" not "Regenerate".
+    let branchMatch = true;
+    try {
+        const statePath = path.join(outputDir, 'PR_BODY.state.json');
+        if (fs.existsSync(statePath)) {
+            const parsed = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+            const artifactBranch: string | undefined = parsed.branch;
+            const currentBranch = getCurrentBranch(workspaceFolder.uri.fsPath);
+            if (artifactBranch && currentBranch && artifactBranch !== currentBranch) {
+                branchMatch = false;
+            }
+        }
+    } catch { /* treat as matching — don't break if state file is malformed */ }
+
+    const titleExists = branchMatch && fs.existsSync(titlePath);
+    const bodyExists = branchMatch && fs.existsSync(bodyPath);
+    const reviewExists = branchMatch && fs.existsSync(reviewPath);
 
     let generatedTitle = 'PR Content';
     if (titleExists) {
@@ -1354,6 +1369,10 @@ async function seedPrDraftFromIssue(
     fs.writeFileSync(path.join(outputDir, 'PR_BODY.md'), `${bodyParts.join('\n')}\n`, 'utf-8');
     if (fs.existsSync(path.join(outputDir, 'PR_REVIEW.md'))) {
         fs.unlinkSync(path.join(outputDir, 'PR_REVIEW.md'));
+    }
+    const issueSeedBranch = getCurrentBranch(workspaceFolder.uri.fsPath);
+    if (issueSeedBranch) {
+        try { fs.writeFileSync(path.join(outputDir, 'PR_BODY.state.json'), JSON.stringify({ branch: issueSeedBranch, baseBranch: '', headSha: '', updatedAt: new Date().toISOString() }, null, 2) + '\n', 'utf-8'); } catch { /* non-fatal */ }
     }
     await refreshWorkspaceState();
     vscode.window.showInformationMessage(`PR Forge: Seeded PR draft from issue #${issue.number}.`);
