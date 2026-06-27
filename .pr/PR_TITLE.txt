@@ -1,1 +1,1 @@
-Add initial project structure and files
+Archive old VSIX packages and add PR generation templates

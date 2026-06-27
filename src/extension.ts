@@ -5,7 +5,7 @@ import { execSync } from 'child_process';
 import { SidebarProvider } from './sidebarProvider';
 import { PreviewPanel, PreviewContent } from './previewPanel';
 import { renderMarkdown } from './markdownRenderer';
-import { generatePr, regeneratePr, clearDiffCache, generateInlineFindings, getFileDiffs, generatePrBodyTemplate } from './prGenerator';
+import { generatePr, regeneratePr, clearDiffCache, generateInlineFindings, getFileDiffs, generatePrBodyTemplate, generatePrReviewTemplate } from './prGenerator';
 import { mapFindingsToComments, findingsToFallbackComment } from './reviewComments';
 import { PrForgeConfig, migrateConfig } from './config';
 import { PROVIDERS, DEFAULT_MODELS, UsageStats, listModels } from './llmClient';
@@ -729,15 +729,29 @@ async function generatePrReview(): Promise<void> {
         return;
     }
 
-    const apiKey = (await getApiKey(extensionContext, config.provider)) ?? '';
-    const providerInfo = PROVIDERS[config.provider];
-    if (!providerInfo?.noAuth && !apiKey) {
+    let activeProvider = config.provider;
+    let apiKey = (await getApiKey(extensionContext, activeProvider)) ?? '';
+    let providerInfo = PROVIDERS[activeProvider];
+    let noAiKey = !providerInfo?.noAuth && !apiKey;
+    if (noAiKey) {
+        const sidebarProvider = provider.getState().provider;
+        if (sidebarProvider && sidebarProvider !== activeProvider) {
+            const fallbackKey = (await getApiKey(extensionContext, sidebarProvider)) ?? '';
+            const fallbackInfo = PROVIDERS[sidebarProvider];
+            if (fallbackKey && fallbackInfo) {
+                activeProvider = sidebarProvider;
+                apiKey = fallbackKey;
+                providerInfo = fallbackInfo;
+                noAiKey = !providerInfo.noAuth && !apiKey;
+            }
+        }
+    }
+    if (noAiKey) {
         const action = await vscode.window.showInformationMessage(
-            'PR Forge: PR Review requires an AI provider key. Set one up to use this feature.',
+            'PR Forge: No AI key configured — generating a template PR review from git data. Add a key via Set API Key for AI-written reviews.',
             'Set API Key'
         );
         if (action === 'Set API Key') await promptSetApiKey(extensionContext, config.provider);
-        return;
     }
 
     outputChannel.show(true);
@@ -755,7 +769,7 @@ async function generatePrReview(): Promise<void> {
                 { location: vscode.ProgressLocation.Notification, title: 'PR Forge: Generating PR Review...', cancellable: true },
                 async (_progress, token) => {
                     token.onCancellationRequested(() => abortController.abort());
-                    return generatePr({
+                    const genOpts = {
                         workspacePath: workspaceFolder.uri.fsPath,
                         baseBranch: config.baseBranch,
                         includeRecentCommits: config.includeRecentCommits ?? false,
@@ -770,10 +784,11 @@ async function generatePrReview(): Promise<void> {
                         testCommand: config.testCommand,
                         runTests: config.runTestsOnGenerate ?? true,
                         generateReview: true,
-                        llm: { provider: config.provider, apiKey, model: config.defaultModel },
-                        onLog: (msg) => logGenerationStep(msg),
+                        llm: { provider: activeProvider, apiKey, model: config.defaultModel },
+                        onLog: (msg: string) => logGenerationStep(msg),
                         signal: abortController.signal,
-                    });
+                    };
+                    return noAiKey ? generatePrReviewTemplate(genOpts) : generatePr(genOpts);
                 }
             );
             logUsage(result.usage);

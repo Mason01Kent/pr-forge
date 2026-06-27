@@ -583,6 +583,75 @@ export async function generatePrBodyTemplate(opts: PrGeneratorOptions): Promise<
   return { title, body, outputDir: templateOutputDir, branch, headSha, usage: { inputTokens: 0, outputTokens: 0 } };
 }
 
+/**
+ * Generate a structured PR review template from raw git data, with no AI call.
+ * Used when no API key is configured so users can still produce a review draft
+ * instead of hitting a dead end after generating the PR body.
+ */
+export async function generatePrReviewTemplate(opts: PrGeneratorOptions): Promise<PrGeneratorResult> {
+  const cwd = opts.workspacePath;
+  const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
+  const headSha = safeExec('git rev-parse HEAD', cwd).trim();
+
+  opts.onLog(`Branch: ${branch}`);
+  opts.onLog('Generating template PR review (no AI — no API key configured)...');
+
+  const diffStat = safeExec(`git diff --stat ${opts.baseBranch}..HEAD`, cwd).trim();
+  const nameStatus = safeExec(`git diff --name-status ${opts.baseBranch}..HEAD`, cwd).trim();
+  const changedFiles = nameStatus
+    ? nameStatus.split('\n').filter(Boolean).map(line => {
+        const parts = line.split('\t');
+        return parts[parts.length - 1] ?? line;
+      })
+    : [];
+  const templateGuidance = loadTemplateGuidance(cwd, opts.templateFiles);
+  const testOutput = opts.runTests && opts.testCommand.trim()
+    ? await runTestCommand(opts)
+    : '(tests skipped)';
+
+  const title = `Review ${titleFromBranch(branch)}`;
+  let body = `## Overall Assessment\n\n`;
+  body += `Template review for \`${branch}\` against \`${opts.baseBranch}\`.`;
+  body += `\n\n> _Generated without AI — use this as a review draft and fill in any real findings before posting._`;
+
+  if (diffStat) {
+    body += `\n\n## Change Summary\n\n\`\`\`\n${diffStat}\n\`\`\``;
+  }
+
+  if (changedFiles.length > 0) {
+    const rows = changedFiles.slice(0, 50).map(file => `| \`${tableCell(file)}\` | Review manually |`).join('\n');
+    body += `\n\n## Files to Review\n\n| File | Notes |\n| --- | --- |\n${rows}`;
+    if (changedFiles.length > 50) {
+      body += `\n\n_…and ${changedFiles.length - 50} more files._`;
+    }
+  }
+
+  body += `\n\n## Blocking Issues\n\n- None identified automatically without AI. Review correctness, edge cases, and regressions manually.`;
+  body += `\n\n## Suggestions\n\n- Confirm the changed code paths with the project tests and a manual read-through.`;
+  body += `\n\n## Security Concerns\n\n- Check authentication, authorization, secret handling, and any user-controlled input paths.`;
+  body += `\n\n## Test Coverage\n\n\`\`\`\n${testOutput.trim()}\n\`\`\``;
+  body += `\n\n## Recommendation\n\nNeeds Review`;
+
+  if (templateGuidance) {
+    body += `\n\n## Repository template\n\n${templateGuidance}`;
+  }
+
+  fs.mkdirSync(path.join(cwd, opts.outputDirectory), { recursive: true });
+  fs.writeFileSync(path.join(cwd, opts.outputDirectory, 'PR_TITLE.txt'), title, 'utf-8');
+  fs.writeFileSync(path.join(cwd, opts.outputDirectory, 'PR_REVIEW.md'), body, 'utf-8');
+
+  const outputDir = path.join(cwd, opts.outputDirectory);
+  opts.onLog('Template PR review written (no AI).');
+  return {
+    title,
+    body,
+    outputDir,
+    branch,
+    headSha,
+    usage: { inputTokens: 0, outputTokens: 0 },
+  };
+}
+
 export async function generatePr(opts: PrGeneratorOptions): Promise<PrGeneratorResult> {
   const cwd = opts.workspacePath;
   const branch = safeExec('git rev-parse --abbrev-ref HEAD', cwd).trim() || '(unknown branch)';
