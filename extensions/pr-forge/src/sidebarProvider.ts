@@ -58,6 +58,7 @@ type WebviewToExtMsg =
     | { command: 'openIssueFlow' }
     | { command: 'refreshReadiness' }
     | { command: 'setApiKey' }
+    | { command: 'removeApiKey' }
     | { command: 'ready' }
     | { command: 'showTools' }
     | { command: 'showPreview' }
@@ -101,6 +102,7 @@ export interface SidebarCallbacks {
     onOpenIssueFlow: () => Promise<void>;
     onRefreshReadiness: () => Promise<void>;
     onSetApiKey: () => Promise<void>;
+    onRemoveApiKey: () => Promise<void>;
     onShowTools: () => void;
     onShowPreview: () => void;
     onShowReview: () => void;
@@ -233,6 +235,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'setApiKey':
                     this._callbacks.onSetApiKey();
+                    break;
+                case 'removeApiKey':
+                    this._callbacks.onRemoveApiKey();
                     break;
                 case 'showTools':
                     this._callbacks.onShowTools();
@@ -408,14 +413,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="card-row"><span class="label">Project</span><span class="value" id="project-name">-</span></div>
     <div class="card-row" id="branch-row" style="display:none"><span class="label">Branch</span><span class="value" id="branch-name"></span></div>
     <div class="card-row"><span class="label">Config</span><span class="badge warn" id="config-badge">Not found</span></div>
-    <div class="card-row"><span class="label">API Key</span><span class="badge warn" id="key-badge">Not set</span></div>
+    <div class="card-row"><span class="label">API Key</span>
+      <span class="key-row-right">
+        <span class="badge warn" id="key-badge">Not set</span>
+        <button class="key-action" id="btn-key-change" style="display:none" title="Change key or switch provider">Change</button>
+        <button class="key-action key-action-danger" id="btn-key-remove" style="display:none" title="Remove the saved API key (falls back to template mode)">Remove</button>
+      </span>
+    </div>
     <div class="card-row" id="submitted-pr-row" style="display:none"><span class="label">PR</span><button class="btn-link" id="btn-submitted-pr-link"></button></div>
     <div class="card-row" id="readiness-row" style="display:none"><span class="label">Readiness</span><span class="badge warn" id="readiness-badge">Unknown</span></div>
   </div>
 
-  <!-- No-key notice (inline, compact) -->
-  <div class="no-key-banner" id="no-key-banner" style="display:none">
-    Template mode — no AI key. Open <strong>Setup &amp; Tools</strong> below to add one.
+  <!-- Onboarding / setup card (shown until config + key are sorted) -->
+  <div class="onboard-card" id="onboard-card" style="display:none">
+    <div class="onboard-title" id="onboard-title">Set up PR Forge</div>
+    <div class="onboard-text" id="onboard-text"></div>
+    <button class="btn btn-primary" id="btn-onboard-primary"><span id="btn-onboard-primary-label">Set Up</span></button>
+    <div class="onboard-note">No API key required — PR Forge generates PR bodies from templates without one. Add a key to unlock AI-written descriptions and code review.</div>
   </div>
 
   <!-- Primary generate actions -->
@@ -493,10 +507,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       </div>
       <!-- Setup buttons -->
       <div class="btn-row" style="margin-top:4px">
-        <button class="btn btn-ghost" id="btn-set-key">Set API Key</button>
+        <button class="btn btn-ghost" id="btn-set-key"><span id="btn-set-key-label">Set API Key</span></button>
         <button class="btn btn-ghost" id="btn-init-config">Init Config</button>
         <button class="btn btn-ghost" id="btn-open-config">Open Config</button>
       </div>
+      <button class="btn btn-ghost btn-remove-key" id="btn-remove-key" style="display:none">Remove API Key</button>
       <div class="btn-row">
         <button class="btn btn-secondary" id="btn-open-existing-pr" style="display:none">${ic.openExternal}<span>Open Existing PR</span></button>
         <button class="btn btn-secondary" id="btn-open-inbox">${ic.preview}<span>Inbox</span></button>
@@ -541,10 +556,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-set-key-top','btn-init-config','btn-init-config-top','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-merge-pr','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-set-key-top','btn-init-config','btn-init-config-top','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-merge-pr','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review','btn-key-change','btn-key-remove','btn-remove-key','btn-onboard-primary'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-set-key-top').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
+  el('btn-key-change').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
+  el('btn-key-remove').addEventListener('click', () => vscode.postMessage({ command: 'removeApiKey' }));
+  el('btn-remove-key').addEventListener('click', () => vscode.postMessage({ command: 'removeApiKey' }));
+  el('btn-onboard-primary').addEventListener('click', () => vscode.postMessage({ command: el('btn-onboard-primary').dataset.command || 'initConfig' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
   el('btn-init-config-top').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
   el('btn-open-config').addEventListener('click', () => vscode.postMessage({ command: 'openConfig' }));
@@ -698,9 +717,35 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     const keyBadge = el('key-badge');
     const noAuth = state.provider === 'ollama';
+    const keyManaged = state.providerKeySet && !noAuth;
     keyBadge.textContent = noAuth ? 'Not needed' : (state.providerKeySet ? 'Set ✓' : 'Not set');
     keyBadge.className = (noAuth || state.providerKeySet) ? 'badge ok' : 'badge warn';
-    el('no-key-banner').style.display = (!noAuth && !state.providerKeySet && state.configExists) ? '' : 'none';
+
+    // Inline key-management controls (Change / Remove) when a key is stored.
+    el('btn-key-change').style.display = keyManaged ? '' : 'none';
+    el('btn-key-remove').style.display = keyManaged ? '' : 'none';
+    el('btn-remove-key').style.display = keyManaged ? '' : 'none';
+    el('btn-set-key-label').textContent = keyManaged ? 'Change API Key' : 'Set API Key';
+
+    // Onboarding card: prominent, actionable setup until config + key are handled.
+    // No need to open Setup & Tools for first-run setup.
+    const onboard = el('onboard-card');
+    const onboardPrimary = el('btn-onboard-primary');
+    if (!state.configExists) {
+      el('onboard-title').textContent = 'Set up PR Forge for this repo';
+      el('onboard-text').textContent = 'Create a project config so PR Forge can tailor generation and submission. You can pick an AI provider and key now, or skip and use template mode.';
+      el('btn-onboard-primary-label').textContent = 'Set Up PR Forge';
+      onboardPrimary.dataset.command = 'initConfig';
+      onboard.style.display = '';
+    } else if (!noAuth && !state.providerKeySet) {
+      el('onboard-title').textContent = 'Add an API key (optional)';
+      el('onboard-text').textContent = 'PR Forge is set up and ready in template mode. Add an API key to switch on AI-written PR descriptions and code review.';
+      el('btn-onboard-primary-label').textContent = 'Add API Key';
+      onboardPrimary.dataset.command = 'setApiKey';
+      onboard.style.display = '';
+    } else {
+      onboard.style.display = 'none';
+    }
     const hasSubmittedPr = !!state.submittedPrNumber;
     const hasOpenPr = !!(state.existingPrNumber || state.submittedPrNumber);
     el('section-submit').style.display = (state.bodyExists || hasOpenPr) ? '' : 'none';
