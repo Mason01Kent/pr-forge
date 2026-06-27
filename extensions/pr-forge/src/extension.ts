@@ -2615,6 +2615,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const configWatcher = vscode.workspace.createFileSystemWatcher('**/.pr-forge.json');
     const outputWatcher = vscode.workspace.createFileSystemWatcher('**/.pr/**');
+    // .git/HEAD changes on every branch switch — keeps the sidebar in sync
+    // when the user runs `git checkout` in an external terminal.
+    const headWatcher = vscode.workspace.createFileSystemWatcher('**/.git/HEAD');
     const refreshWatcher = () => { void refreshWorkspaceState(); };
     configWatcher.onDidCreate(refreshWatcher);
     configWatcher.onDidChange(refreshWatcher);
@@ -2622,7 +2625,8 @@ export function activate(context: vscode.ExtensionContext): void {
     outputWatcher.onDidCreate(refreshWatcher);
     outputWatcher.onDidChange(refreshWatcher);
     outputWatcher.onDidDelete(refreshWatcher);
-    workspaceWatchers = [configWatcher, outputWatcher];
+    headWatcher.onDidChange(refreshWatcher);
+    workspaceWatchers = [configWatcher, outputWatcher, headWatcher];
     context.subscriptions.push(...workspaceWatchers);
 
     // Refresh sidebar whenever the workspace changes (e.g. folder opened after extension loaded)

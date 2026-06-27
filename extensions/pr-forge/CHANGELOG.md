@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.8
+
+### Fixed
+- Sidebar now updates immediately when switching branches in an external terminal. A file-system watcher on `.git/HEAD` triggers a workspace state refresh on every `git checkout`, so the Branch row, Generate button labels, and artifact state all reflect the new branch without needing to interact with VS Code first.
+
 ## 1.6.7
 
 ### Fixed
