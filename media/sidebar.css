@@ -126,57 +126,6 @@ body {
   border-radius: 8px;
 }
 
-.no-key-banner-top {
-  display: none;
-  flex-direction: column;
-  gap: 8px;
-  color: var(--vscode-foreground);
-  border: 1px solid rgba(204, 167, 0, 0.35);
-  background: linear-gradient(180deg, rgba(204, 167, 0, 0.12), rgba(204, 167, 0, 0.06));
-}
-
-.no-key-copy {
-  line-height: 1.45;
-}
-
-.no-key-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.btn-inline {
-  width: auto;
-  flex: 0 0 auto;
-  min-width: 0;
-}
-
-.workflow-hint {
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.2));
-  border-left: 3px solid var(--vscode-button-background);
-  border-radius: 8px;
-  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127,127,127,0.06));
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.workflow-hint-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--vscode-descriptionForeground);
-  opacity: 0.75;
-}
-
-.workflow-hint-text {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--vscode-foreground);
-}
 
 /* ── Sections ────────────────────────────────── */
 .section {
