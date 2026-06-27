@@ -114,16 +114,58 @@ body {
   border: 1px solid rgba(204, 167, 0, 0.3);
 }
 
-/* ── No-key banner ───────────────────────────── */
-.no-key-banner {
-  padding: 8px 12px;
+/* ── Onboarding card ─────────────────────────── */
+.onboard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
   margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--vscode-editorWarning-foreground, #cca700);
-  background: rgba(204, 167, 0, 0.08);
-  border-bottom: 1px solid rgba(204, 167, 0, 0.25);
   border-radius: 8px;
+  background: var(--vscode-textBlockQuote-background, rgba(127,127,127,0.06));
+  border: 1px solid var(--vscode-focusBorder, rgba(0,120,212,0.4));
+}
+.onboard-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+.onboard-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--vscode-descriptionForeground);
+}
+.onboard-note {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.85;
+}
+
+/* ── Inline API key actions ──────────────────── */
+.key-row-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.key-action {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground);
+}
+.key-action:hover {
+  text-decoration: underline;
+  color: var(--vscode-textLink-activeForeground);
+}
+.key-action-danger {
+  color: var(--vscode-errorForeground, #f14c4c);
+}
+.btn-remove-key {
+  color: var(--vscode-errorForeground, #f14c4c) !important;
 }
 
 

@@ -9,7 +9,7 @@ import { generatePr, regeneratePr, clearDiffCache, generateInlineFindings, getFi
 import { mapFindingsToComments, findingsToFallbackComment } from './reviewComments';
 import { PrForgeConfig, migrateConfig } from './config';
 import { PROVIDERS, DEFAULT_MODELS, UsageStats, listModels } from './llmClient';
-import { getApiKey, hasApiKey, storeApiKey, promptSetApiKey } from './secretsManager';
+import { getApiKey, hasApiKey, storeApiKey, promptSetApiKey, deleteApiKey } from './secretsManager';
 import { parseRemote, IssueItem, ReviewThread, ExistingPrSummary } from './scm/index';
 import { buildPrSnapshotDocument, isDuplicatePrSubmitError } from './submitFlow';
 import { initTelemetry, disposeTelemetry, telemetryEvent, telemetryError, classifyError } from './telemetry';
@@ -528,7 +528,7 @@ async function clearPrOutput(): Promise<void> {
     log('PR draft cleared.');
 }
 
-async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder, chosenProvider?: string): Promise<void> {
+async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder, chosenProvider?: string, silent = false): Promise<void> {
     const configPath = getConfigPath(workspaceFolder);
     if (fs.existsSync(configPath)) {
         const overwrite = await vscode.window.showWarningMessage(`${CONFIG_FILE_NAME} already exists. Overwrite?`, 'Yes', 'No');
@@ -587,7 +587,9 @@ async function initializeProjectConfig(workspaceFolder: vscode.WorkspaceFolder, 
     };
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
     log(`Config initialized: ${configPath}`);
-    vscode.window.showInformationMessage(`PR Forge: Config initialized at ${CONFIG_FILE_NAME}`);
+    if (!silent) {
+        vscode.window.showInformationMessage(`PR Forge: Config initialized at ${CONFIG_FILE_NAME}`);
+    }
 }
 
 async function openProjectConfig(): Promise<void> {
@@ -904,7 +906,7 @@ async function runSetupWizard(wf: vscode.WorkspaceFolder): Promise<void> {
         keyStored = true;
     }
 
-    await initializeProjectConfig(wf, resolvedProvider ?? undefined);
+    await initializeProjectConfig(wf, resolvedProvider ?? undefined, true);
 
     const cfg = readConfig(wf);
     if (cfg) {
@@ -957,6 +959,29 @@ async function setApiKey(): Promise<void> {
     }
 
     telemetryEvent('setApiKey', { provider: result });
+}
+
+async function removeApiKey(): Promise<void> {
+    const wf = await resolveTargetProjectFolder();
+    const config = wf ? readConfig(wf) : null;
+    const targetProvider = config?.provider ?? provider.getState().provider ?? undefined;
+    if (!targetProvider) {
+        vscode.window.showInformationMessage('PR Forge: No API key to remove.');
+        return;
+    }
+    const providerName = PROVIDERS[targetProvider]?.displayName ?? targetProvider;
+    const confirm = await vscode.window.showWarningMessage(
+        `Remove the saved ${providerName} API key? PR Forge will fall back to template mode until you add one again.`,
+        { modal: true },
+        'Remove Key'
+    );
+    if (confirm !== 'Remove Key') return;
+
+    await deleteApiKey(extensionContext, targetProvider);
+    provider.updateState({ providerKeySet: false });
+    void refreshWorkspaceState();
+    vscode.window.showInformationMessage(`PR Forge: ${providerName} API key removed — template mode active.`);
+    telemetryEvent('removeApiKey', { provider: targetProvider });
 }
 
 async function submitDraftPr(): Promise<void> {
@@ -2384,6 +2409,7 @@ export function activate(context: vscode.ExtensionContext): void {
         onOpenIssueFlow: openIssueFlow,
         onRefreshReadiness: () => refreshReadiness(),
         onSetApiKey: setApiKey,
+        onRemoveApiKey: removeApiKey,
         onShowTools: () => {
             provider.updateState({ viewMode: 'tools' });
         },

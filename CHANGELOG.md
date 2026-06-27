@@ -1,6 +1,16 @@
 # Changelog
 
-## 1.6.3
+## 1.6.4
+
+### Changed
+- **First-run onboarding** - replaced the easy-to-miss inline notice with a prominent setup card at the top of the sidebar. First-time setup (config + optional provider/key) is now one click from the main view, no need to open Setup & Tools.
+- The onboarding card states clearly that an API key is **optional** — PR Forge generates PR bodies from templates without one, and a key unlocks AI descriptions and review.
+
+### Added
+- **Inline API key management** - when a key is stored, the API Key row shows **Change** (switch provider or key) and **Remove** actions; a matching "Remove API Key" button is also available in Setup & Tools. The Set/Change label updates with state.
+
+### Fixed
+- Reduced duplicate notification toasts during first-run setup — the guided wizard no longer fires a separate "Config initialized" message on top of its own ready message.
 
 ### Fixed
 - Sidebar buttons were completely unresponsive (acting like static images) due to a duplicate `const` declaration in the webview script, which raised a `SyntaxError` that prevented the entire script — and all button event handlers — from loading. Only native controls (checkboxes, dropdowns) kept working. Removing the redundant declaration restores all buttons, the preview/back navigation, and the stale-state reset.
