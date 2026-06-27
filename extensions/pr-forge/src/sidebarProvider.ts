@@ -198,6 +198,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         webviewView.webview.onDidReceiveMessage((msg: WebviewToExtMsg) => {
             switch (msg.command) {
                 case 'ready':
+                    // Reset view to tools on every fresh load so stale viewMode
+                    // from a previous session doesn't strand the webview in preview.
+                    this._state.viewMode = 'tools';
                     this._post({ type: 'stateUpdate', state: this._state });
                     this._callbacks.onReady();
                     break;
