@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.10
+
+### Fixed
+- **Sidebar buttons were dead after load** - the sidebar webview script no longer emits a raw newline inside a JavaScript string literal, so the injected script parses correctly and button handlers stay live.
+
 ## 1.6.9
 
 ### Fixed

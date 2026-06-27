@@ -855,7 +855,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         tooltipLines.push('');
         state.readinessInfo.slice(0, 3).forEach(i => tooltipLines.push(i));
       }
-      badge.title = tooltipLines.join('\n');
+      badge.title = tooltipLines.join('\\n');
       el('readiness-row').style.display = '';
       if (state.readinessSummary) {
         el('readiness-summary').textContent = state.readinessSummary;
