@@ -44,14 +44,12 @@ If you skip the API key, PR body generation falls back to a git-driven template 
 ## Quick start
 
 1. Click the **PR Forge** icon in the Activity Bar to open the sidebar.
-2. Click **Set API Key** - pick your provider and paste its key.
-3. Open the **Settings** dropdown if you want to change the model or generation toggles.
-4. Click **Init Config** to create `.pr-forge.json` in your project root.
-5. Switch to a feature branch and click **Generate PR Body** or **Generate PR Review**.
+2. Click **Init Config** (or **Set API Key**) — a guided wizard walks you through picking a provider and entering your API key, then writes `.pr-forge.json` in one step. You can skip the key to use template mode.
+3. Switch to a feature branch and click **Generate PR Body** or **Generate PR Review**.
 
-> No API key configured? `Generate PR Body` still works and writes a template-based body from git history, file changes, and test output.
+> **No API key?** Click *Skip* in the setup wizard. `Generate PR Body` still works — it writes a structured template body from git history, file changes, and test output, with no AI required.
 
-> The model dropdown, Run Tests toggle, and other options are controlled directly from the sidebar. Generation streams live into the sidebar as the model writes.
+> The model picker, Run Tests toggle, and other options live under the **Options** dropdown in the sidebar. Low-frequency actions (Set API Key, Init Config, Inbox, etc.) are tucked into the collapsible **Setup & Tools** section at the bottom.
 
 ---
 
@@ -59,7 +57,7 @@ If you skip the API key, PR body generation falls back to a git-driven template 
 
 Download the release artifact from the repo root and install it with VS Code:
 
-`pr-forge-1.5.9.vsix`
+`pr-forge-1.6.0.vsix`
 
 Use the VS Code command palette and run `Extensions: Install from VSIX...`.
 
