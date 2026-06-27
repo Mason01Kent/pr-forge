@@ -69,6 +69,7 @@ type WebviewToExtMsg =
     | { command: 'copyPreviewTitle' }
     | { command: 'copyPreviewBody' }
     | { command: 'openPrUrl' }
+    | { command: 'mergePr' }
     | { command: 'postReview' }
     | { command: 'postInlineReview' }
     | { command: 'clearPr' }
@@ -110,6 +111,7 @@ export interface SidebarCallbacks {
     onCopyPreviewTitle: (title: string) => void;
     onCopyPreviewBody: () => void;
     onOpenPrUrl: () => void;
+    onMergePr: () => void;
     onPostReview: () => void;
     onPostInlineReview: () => void;
     onClearPr: () => void;
@@ -260,6 +262,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'openPrUrl':
                     this._callbacks.onOpenPrUrl();
+                    break;
+                case 'mergePr':
+                    this._callbacks.onMergePr();
                     break;
                 case 'postReview':
                     this._callbacks.onPostReview();
@@ -473,6 +478,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <div class="section" id="section-pr-actions" style="display:none">
     <div class="btn-row">
       <button class="btn btn-secondary" id="btn-open-github" style="display:none" title="Open the submitted PR in your browser">${ic.openExternal}<span>Open PR</span></button>
+      <button class="btn btn-danger" id="btn-merge-pr" style="display:none" title="Open the live PR page and review merge risks before continuing">${ic.submit}<span>Merge PR</span></button>
       <button class="btn btn-secondary" id="btn-refresh-readiness" title="Re-check merge readiness and checks">${ic.review}<span>Check Readiness</span></button>
     </div>
     <div class="btn-row">
@@ -560,7 +566,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   let _onBaseBranch = false;
   let currentState = null;
 
-  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
+  const allBtns = ['btn-set-key','btn-init-config','btn-open-config','btn-pr-body','btn-pr-review','btn-submit-pr','btn-submit-draft-pr','btn-open-existing-pr','btn-open-inbox','btn-open-issues','btn-refresh-readiness','btn-open-github','btn-merge-pr','btn-open-review-threads','btn-post-review','btn-post-inline-review','btn-close-pr','btn-clear-pr','btn-generated-open-body','btn-generated-open-review','btn-generated-preview-body','btn-generated-preview-review'].map(el);
 
   el('btn-set-key').addEventListener('click', () => vscode.postMessage({ command: 'setApiKey' }));
   el('btn-init-config').addEventListener('click', () => vscode.postMessage({ command: 'initConfig' }));
@@ -580,6 +586,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   el('btn-open-review-threads').addEventListener('click', () => vscode.postMessage({ command: 'openReviewThreads' }));
   el('btn-submitted-pr-link').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
   el('btn-open-github').addEventListener('click', () => vscode.postMessage({ command: 'openPrUrl' }));
+  el('btn-merge-pr').addEventListener('click', () => vscode.postMessage({ command: 'mergePr' }));
   el('btn-post-review').addEventListener('click', () => vscode.postMessage({ command: 'postReview' }));
   el('btn-post-inline-review').addEventListener('click', () => vscode.postMessage({ command: 'postInlineReview' }));
   el('btn-close-pr').addEventListener('click', () => vscode.postMessage({ command: 'closePr' }));
@@ -886,7 +893,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     el('btn-close-pr').style.display = hasOpenPr ? '' : 'none';
     el('btn-close-pr').querySelector('span').textContent = 'Close ' + prTerm + (openPrNum ? ' #' + openPrNum : '');
     el('btn-close-pr').title = 'Close this ' + prTermLong + ' on GitHub or GitLab without merging. This action cannot be undone.';
-    el('btn-open-github').style.display = state.submittedPrUrl ? '' : 'none';
+    const prUrl = state.submittedPrUrl || state.existingPrUrl;
+    el('btn-open-github').style.display = prUrl ? '' : 'none';
+    el('btn-merge-pr').style.display = prUrl ? '' : 'none';
     el('btn-open-review-threads').style.display = state.submittedPrNumber ? '' : 'none';
     el('btn-post-review').style.display = state.reviewExists && state.submittedPrUrl ? '' : 'none';
     el('btn-post-review').title = 'Post the generated review as a comment on this ' + prTermLong + ' (GitHub or GitLab).';

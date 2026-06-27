@@ -499,6 +499,23 @@ export class GitLabScmProvider implements ScmProvider {
         throw new Error((j.message ?? `GitLab API error ${statusCode}`) + glHint(statusCode));
     }
 
+    async mergePr(payload: { owner: string; repo: string; number: number; token: string }): Promise<PrResult> {
+        const { owner, repo, number, token } = payload;
+        const pid = projectId(owner, repo);
+        const { statusCode, json } = await glRequest(
+            this.baseUrl,
+            token,
+            `/projects/${pid}/merge_requests/${number}/merge`,
+            'PUT',
+            JSON.stringify({ should_remove_source_branch: false }),
+        );
+        const mr = json as { iid?: number; web_url?: string; message?: string };
+        if ((statusCode === 200 || statusCode === 201) && mr.iid && mr.web_url) {
+            return { url: mr.web_url, number: mr.iid };
+        }
+        throw new Error((mr.message ?? `GitLab API error ${statusCode}`) + glHint(statusCode));
+    }
+
     async postPrComment(payload: { owner: string; repo: string; number: number; body: string }): Promise<{ url: string }> {
         const { owner, repo, number, body } = payload;
         const pid = projectId(owner, repo);

@@ -25,6 +25,7 @@ If you skip the API key, PR body generation falls back to a git-driven template 
 - **Seed from Issue** - browse open issues, then create a branch or seed a draft PR body from the selected issue
 - **Submit PR / Submit Draft PR** - create or update a pull request or merge request without leaving VS Code (GitHub and GitLab, including Enterprise and self-managed)
 - **Open Existing PR** - open the already-open PR or merge request for the current branch directly from the sidebar
+- **Merge PR / Merge MR** - merge the open pull request or merge request for the current branch from VS Code after a confirmation warning
 - **Review thread actions** - browse review threads, jump to file anchors, reply, and resolve/reopen where the host API supports it
 - **Metadata automation** - carry labels, assignees, reviewers, and milestone values into GitHub and GitLab submissions when configured
 - **Regenerate with feedback** - type an instruction in the Refine panel and hit Enter to revise the draft without re-running tests
@@ -58,7 +59,7 @@ If you skip the API key, PR body generation falls back to a git-driven template 
 
 Download the release artifact from the repo root and install it with VS Code:
 
-`pr-forge-1.5.8.vsix`
+`pr-forge-1.5.9.vsix`
 
 Use the VS Code command palette and run `Extensions: Install from VSIX...`.
 
@@ -97,6 +98,8 @@ PR Forge supports **GitHub**, **GitHub Enterprise**, **GitLab**, and **GitLab se
 Repository PR/MR templates are discovered automatically from common locations such as `.github/PULL_REQUEST_TEMPLATE`, `docs/PULL_REQUEST_TEMPLATE`, and `.gitlab/merge_request_templates`, and the generated body includes that guidance when present.
 
 After submitting, **Post Review to PR/MR** posts the full review as a single comment, or use **Post Inline Review** to post line-anchored comments directly on the diff (GitHub review API, or GitLab discussion notes when the API has enough diff metadata, with a plain-note fallback when it does not).
+
+When a PR/MR already exists for the current branch, the sidebar also exposes **Merge PR / Merge MR** so you can finish the workflow without leaving VS Code. The merge action shows a warning first and then calls the provider's merge endpoint directly.
 
 **Review threads** - the sidebar can browse review threads, open the underlying file anchor, open the remote discussion, reply to a thread, and resolve or reopen a thread when the host API supports that action. GitHub and GitLab do not expose identical review-thread behavior, so PR Forge shows only the actions the host can actually perform.
 

@@ -643,6 +643,21 @@ mutation($threadId: ID!) {
         throw new Error((j.message || `GitHub API error ${statusCode}`) + ghHint(statusCode));
     }
 
+    async mergePr(payload: { owner: string; repo: string; number: number; token: string }): Promise<PrResult> {
+        const { owner, repo, number, token } = payload;
+        const { statusCode, json } = await ghRequest(
+            this.baseUrl,
+            { path: `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/merge`, method: 'PUT', headers: { 'Content-Type': 'application/json' } },
+            token,
+            JSON.stringify({ merge_method: 'merge' })
+        );
+        const j = json as { merged?: boolean; message?: string };
+        if (statusCode === 200 && j.merged) {
+            return { url: `https://github.com/${owner}/${repo}/pull/${number}`, number };
+        }
+        throw new Error((j.message || `GitHub API error ${statusCode}`) + ghHint(statusCode));
+    }
+
     async postPrComment(payload: { owner: string; repo: string; number: number; body: string }): Promise<{ url: string }> {
         const { owner, repo, number, body } = payload;
         const reqBody = JSON.stringify({ body });

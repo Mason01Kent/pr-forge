@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.9
+
+### Added
+- **Merge PR / Merge MR** - merge an open pull request or merge request from the sidebar after a confirmation warning; the action uses the provider merge endpoint directly.
+
+### Changed
+- Updated the README install and workflow text to describe the new merge action.
+- Kept the release packaging and docs aligned with the current VSIX filename.
+
 ## 1.5.8
 
 ### Changed

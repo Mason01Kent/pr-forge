@@ -99,6 +99,8 @@ export interface ScmProvider {
     listOpenIssues(payload: { owner: string; repo: string }): Promise<IssueItem[]>;
     /** Summarize merge readiness for a specific PR/MR. */
     getReadiness(payload: { owner: string; repo: string; number: number }): Promise<ReadinessSummary>;
+    /** Merge an open PR or MR. */
+    mergePr(payload: { owner: string; repo: string; number: number; token: string }): Promise<PrResult>;
     /** Fetch review threads/comments for a specific PR/MR. */
     listReviewThreads(payload: { owner: string; repo: string; number: number }): Promise<ReviewThread[]>;
     /** Reply to an existing review thread/discussion. */
