@@ -20,20 +20,12 @@ Change code  →  Generate title/body/review  →  Preview & edit  →  Submit o
 
 ## Demo assets
 
-![PR Forge sidebar](docs/assets/sidebar.png)
-
-> Screenshots and GIFs are now checked into `docs/assets/`.
-
-| Placeholder | What to capture |
-|---|---|
-| `docs/assets/sidebar.png` | PR Forge sidebar with generate controls visible |
-| `docs/assets/generated-pr-body.png` | Generated PR body open in the editor |
-| `docs/assets/generated-review.png` | Generated review document |
-| `docs/assets/submit-pr-flow.gif` | Full submit-PR flow from sidebar to GitHub |
-
-### Asset status
-
-- `sidebar.png`, `generated-pr-body.png`, `generated-review.png`, and `submit-pr-flow.gif` are all present in `docs/assets/`.
+| Asset | Preview | What it shows |
+|---|---|---|
+| `sidebar.png` | ![PR Forge sidebar](docs/assets/sidebar.png) | PR Forge sidebar with generate controls visible |
+| `generated-pr-body.png` | ![Generated PR body](docs/assets/generated-pr-body.png) | Generated PR body open in the editor |
+| `generated-review.png` | ![Generated review](docs/assets/generated-review.png) | Generated review document |
+| `submit-pr-flow.gif` | ![Submit PR flow](docs/assets/submit-pr-flow.gif) | Full submit-PR flow from sidebar to GitHub |
 
 ---
 
